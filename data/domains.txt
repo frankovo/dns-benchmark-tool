@@ -1,0 +1,16 @@
+# Popular domains for DNS benchmarking
+google.com
+github.com
+stackoverflow.com
+wikipedia.org
+reddit.com
+twitter.com
+linkedin.com
+microsoft.com
+apple.com
+amazon.com
+netflix.com
+youtube.com
+facebook.com
+instagram.com
+whatsapp.com

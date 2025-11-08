@@ -1,0 +1,3 @@
+# Popular domains for DNS benchmarking
+google.com
+github.com

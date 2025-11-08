@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dns-benchmark-tool"
+version = "0.1.0"
+description = "Benchmark DNS resolvers across domains and record types with analytics and reports (CSV, Excel, PDF, JSON)."
+readme = "README-pypi.md"
+authors = [
+    { name = "Joseph Oseh Frank", email = "frank@osehfrank.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.8"
+
+dependencies = [
+    "dnspython==2.8.0",
+    "pandas==2.3.3",
+    "aiohttp==3.13.2",
+    "click==8.3.0",
+    "pyfiglet==1.0.4",
+    "colorama==0.4.6",
+    "Jinja2==3.1.6",
+    "weasyprint==66.0",
+    "openpyxl==3.1.2",
+    "pyyaml==6.0.1",
+    "tqdm==4.66.1",
+    "matplotlib==3.10.7",
+]
+
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+    "Topic :: Internet :: Name Service (DNS)",
+    "Topic :: System :: Networking",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/frankovo/dns-benchmark-tool"
+Documentation = "https://github.com/frankovo/dns-benchmark-tool#readme"
+Source = "https://github.com/frankovo/dns-benchmark-tool"
+Tracker = "https://github.com/frankovo/dns-benchmark-tool/issues"
+
+[project.optional-dependencies]
+dev = [
+    "mypy==1.18.2",
+    "black==25.9.0",
+    "flake8==7.3.0",
+    "autopep8==2.3.2",
+    "pytest>=8.4.2",
+    "coverage>=7.11.1",
+    "isort>=5.12.0",
+    "pytest-asyncio>=1.2.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dns_benchmark = ["data/*.json", "data/*.txt", "data/*.yaml"]
+
+[project.scripts]
+dns-benchmark = "dns_benchmark.cli:cli"
+
+# -------------------
+# Tool configurations
+# -------------------
+
+[tool.flake8]
+exclude = [".venv", ".eggs", "*.egg", "tests/*"]
+
+[tool.mypy]
+files = ["src"]
+ignore_missing_imports = true
+strict = true
+
+[tool.black]
+line-length = 88
+target-version = ["py38", "py39", "py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+combine_as_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+addopts = "-ra -q"

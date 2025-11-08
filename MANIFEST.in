@@ -1,0 +1,6 @@
+include README-pypi.md LICENSE
+recursive-include src/dns_benchmark *.py
+recursive-include docs/screenshots *.png
+exclude sample_data/*
+exclude data/*
+exclude tests/*

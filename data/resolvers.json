@@ -1,0 +1,12 @@
+{
+  "resolvers": [
+    {"name": "Cloudflare", "ip": "1.1.1.1"},
+    {"name": "Google", "ip": "8.8.8.8"},
+    {"name": "Quad9", "ip": "9.9.9.9"},
+    {"name": "OpenDNS", "ip": "208.67.222.222"},
+    {"name": "Comodo", "ip": "8.26.56.26"},
+    {"name": "Verisign", "ip": "64.6.64.6"},
+    {"name": "Level3", "ip": "4.2.2.1"},
+    {"name": "DNS.WATCH", "ip": "84.200.69.80"}
+  ]
+}

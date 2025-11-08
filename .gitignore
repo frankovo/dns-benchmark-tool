@@ -1,0 +1,54 @@
+# -----------------
+# Python Artifacts
+# -----------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# -----------------
+# Virtual Environments
+# -----------------
+.venv/
+venv/
+env/
+ENV/
+
+# -----------------
+# Build / Packaging
+# -----------------
+build/
+dist/
+*.egg-info/
+__pycache__/
+.eggs/
+*.egg
+
+# -----------------
+# Testing / Coverage
+# -----------------
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+
+# -----------------
+# IDE / Editor
+# -----------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -----------------
+# OS Files
+# -----------------
+.DS_Store
+Thumbs.db
+
+# -----------------
+# Project Specific
+# -----------------
+benchmark_results/

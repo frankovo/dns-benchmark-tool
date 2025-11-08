@@ -1,0 +1,7 @@
+{
+  "resolvers": [
+    {"name": "Cloudflare", "ip": "1.1.1.1"},
+    {"name": "Google", "ip": "8.8.8.8"},
+    {"name": "Quad9", "ip": "9.9.9.9"}
+  ]
+}
