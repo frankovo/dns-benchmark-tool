@@ -1,4 +1,7 @@
-include README-pypi.md LICENSE
+include README-pypi.md
+include LICENSE
+include CONTRIBUTING.md
+include RELEASE.md
 recursive-include src/dns_benchmark *.py
 recursive-include docs/screenshots *.png
 exclude sample_data/*

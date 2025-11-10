@@ -1,4 +1,5 @@
-.PHONY: install install-dev uninstall mypy black isort flake8 cov test clean cli-test
+.PHONY: install install-dev uninstall mypy black isort flake8 cov test clean cli-test \
+	gpg-check release-patch release-minor release-major release-tag
 
 # 🔧 Install package (runtime only)
 install:
@@ -40,3 +41,25 @@ clean:
 cli-test:
     # Run only the CLI smoke tests marked with @pytest.mark.cli
 	pytest -vv -s -m cli tests/test_cli_commands.py
+
+# GPG sanity check
+gpg-check:
+	./gpg-check.sh
+
+# Release targets
+release-patch:
+	./release.sh patch
+
+release-minor:
+	./release.sh minor
+
+release-major:
+	./release.sh major
+
+# Tag after PR merge
+release-tag:
+	@if [ -z "$(VERSION)" ]; then \
+    	echo "❌ Usage: make release-tag VERSION=X.Y.Z"; exit 1; \
+    fi
+	./release-tag.sh $(VERSION)
+

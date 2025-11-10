@@ -52,3 +52,8 @@ We welcome improvements, bug fixes, and new ideas.
 
 - Be respectful and constructive in discussions.
 - Focus on clear communication and collaborative problem‑solving.
+
+## Releases
+
+Releases are managed separately by the maintainer.  
+See [RELEASE.md](./RELEASE.md) for the full release process.
