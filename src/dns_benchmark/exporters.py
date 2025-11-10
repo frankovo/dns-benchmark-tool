@@ -518,9 +518,7 @@ class PDFExporter:
                     <img src="{latency_chart_path}" alt="Latency Comparison">
                 </div>
             </div>
-            
             {success_block}
-
             <div class="section">
             <h2>Resolver Rankings</h2>
             <table>
