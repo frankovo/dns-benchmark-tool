@@ -161,9 +161,27 @@ def benchmark(
         progress_bar = None
         if not quiet:
             progress_bar = create_progress_bar(total_queries, "DNS Queries")
-            engine.set_progress_callback(
-                lambda: progress_bar.update(1) if progress_bar else None
-            )
+
+            # progress_bar = create_progress_bar(total_queries, "DNS Queries")
+            # engine.set_progress_callback(
+            #     lambda: progress_bar.update(1) if progress_bar else None
+            # )
+            # New callback signature: (completed, total)
+            def _progress_cb(completed: int, total: int) -> None:
+                """TQDM-friendly progress callback.
+
+                Advances the bar by 1 per completed item and sets a postfix like '23/100'.
+                Keep this callback fast and non-blocking.
+                """
+                try:
+                    if progress_bar:
+                        progress_bar.update(1)
+                        progress_bar.set_postfix_str(f"{completed}/{total}")
+                except Exception:
+                    # Never allow progress callback errors to interrupt benchmarking
+                    pass
+
+            engine.set_progress_callback(_progress_cb)
 
         results = asyncio.run(
             engine.run_benchmark(

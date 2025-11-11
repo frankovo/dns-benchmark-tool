@@ -50,12 +50,19 @@ class DNSQueryEngine:
         self.timeout = timeout
         self.max_retries = max_retries
         self.semaphore = asyncio.Semaphore(max_concurrent_queries)
-        self.progress_callback: Optional[Callable[[], None]] = None
+        # self.progress_callback: Optional[Callable[[], None]] = None
+        self.progress_callback: Optional[Callable[[int, int], None]] = None
+        self.query_counter = 0  # New
+        self.total_queries = 0  # New
 
-    def set_progress_callback(self, callback: Callable[[], None]) -> None:
-        """Set callback for progress updates."""
+    # def set_progress_callback(self, callback: Callable[[], None]) -> None:
+    #     """Set callback for progress updates."""
+    #     self.progress_callback = callback
+    #     return None
+
+    def set_progress_callback(self, callback: Callable[[int, int], None]) -> None:
+        """Set callback for progress updates with completed/total counts."""
         self.progress_callback = callback
-        return None
 
     async def query_single(
         self, resolver_ip: str, resolver_name: str, domain: str, record_type: str = "A"
@@ -86,10 +93,22 @@ class DNSQueryEngine:
                     ttl = response.rrset.ttl if response.rrset else None
 
                     # Update progress
-                    if self.progress_callback:
-                        self.progress_callback()
+                    # if self.progress_callback:
+                    #     self.progress_callback()
 
-                    return DNSQueryResult(
+                    # return DNSQueryResult(
+                    #     resolver_ip=resolver_ip,
+                    #     resolver_name=resolver_name,
+                    #     domain=domain,
+                    #     record_type=record_type,
+                    #     start_time=start_time,
+                    #     end_time=end_time,
+                    #     latency_ms=latency_ms,
+                    #     status=QueryStatus.SUCCESS,
+                    #     answers=answers,
+                    #     ttl=ttl,
+                    # )
+                    result = DNSQueryResult(
                         resolver_ip=resolver_ip,
                         resolver_name=resolver_name,
                         domain=domain,
@@ -101,12 +120,20 @@ class DNSQueryEngine:
                         answers=answers,
                         ttl=ttl,
                     )
+                    if self.progress_callback:
+                        self.query_counter += 1
+                        self.progress_callback(self.query_counter, self.total_queries)
+
+                    return result
 
             except dns.exception.Timeout:
                 if attempt == self.max_retries:
                     end_time = time.time()
+                    # if self.progress_callback:
+                    #     self.progress_callback()
                     if self.progress_callback:
-                        self.progress_callback()
+                        self.query_counter += 1
+                        self.progress_callback(self.query_counter, self.total_queries)
                     return DNSQueryResult(
                         resolver_ip=resolver_ip,
                         resolver_name=resolver_name,
@@ -124,8 +151,11 @@ class DNSQueryEngine:
 
             except dns.resolver.NXDOMAIN:
                 end_time = time.time()
+                # if self.progress_callback:
+                #     self.progress_callback()
                 if self.progress_callback:
-                    self.progress_callback()
+                    self.query_counter += 1
+                    self.progress_callback(self.query_counter, self.total_queries)
                 return DNSQueryResult(
                     resolver_ip=resolver_ip,
                     resolver_name=resolver_name,
@@ -142,8 +172,11 @@ class DNSQueryEngine:
 
             except dns.resolver.NoNameservers:
                 end_time = time.time()
+                # if self.progress_callback:
+                #     self.progress_callback()
                 if self.progress_callback:
-                    self.progress_callback()
+                    self.query_counter += 1
+                    self.progress_callback(self.query_counter, self.total_queries)
                 return DNSQueryResult(
                     resolver_ip=resolver_ip,
                     resolver_name=resolver_name,
@@ -165,9 +198,11 @@ class DNSQueryEngine:
                     if "refused" in str(e).lower():
                         error_status = QueryStatus.CONNECTION_REFUSED
 
+                    # if self.progress_callback:
+                    #     self.progress_callback()
                     if self.progress_callback:
-                        self.progress_callback()
-
+                        self.query_counter += 1
+                        self.progress_callback(self.query_counter, self.total_queries)
                     return DNSQueryResult(
                         resolver_ip=resolver_ip,
                         resolver_name=resolver_name,
@@ -203,22 +238,40 @@ class DNSQueryEngine:
         resolvers: List[Dict[str, str]],
         domains: List[str],
         record_types: Optional[List[str]] = None,
+        iterations: int = 1,  # New
     ) -> List[DNSQueryResult]:
         """Run benchmark across all resolvers and domains."""
         if not record_types:
             record_types = ["A"]
 
+        self.query_counter = 0
+        self.total_queries = (
+            len(resolvers) * len(domains) * len(record_types) * iterations
+        )
+
         tasks = []
-        for resolver in resolvers:
-            for domain in domains:
-                for record_type in record_types:
-                    task = self.query_single(
-                        resolver_ip=resolver["ip"],
-                        resolver_name=resolver["name"],
-                        domain=domain,
-                        record_type=record_type,
-                    )
-                    tasks.append(task)
+        # for resolver in resolvers:
+        #     for domain in domains:
+        #         for record_type in record_types:
+        #             task = self.query_single(
+        #                 resolver_ip=resolver["ip"],
+        #                 resolver_name=resolver["name"],
+        #                 domain=domain,
+        #                 record_type=record_type,
+        #             )
+        #             tasks.append(task)
+
+        for iteration in range(iterations):
+            for resolver in resolvers:
+                for domain in domains:
+                    for record_type in record_types:
+                        task = self.query_single(
+                            resolver_ip=resolver["ip"],
+                            resolver_name=resolver["name"],
+                            domain=domain,
+                            record_type=record_type,
+                        )
+                        tasks.append(task)
 
         results = await asyncio.gather(*tasks)
         return list(results)

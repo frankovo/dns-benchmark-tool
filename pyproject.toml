@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dns-benchmark-tool"
-version = "0.2.1"
+version = "0.2.2"
 description = "Benchmark DNS resolvers across domains and record types with analytics and reports (CSV, Excel, PDF, JSON)."
 readme = "README-pypi.md"
 authors = [
@@ -58,7 +58,8 @@ dev = [
     "pytest>=8.0,<9.0",
     "coverage>=7.6,<8.0",
     "isort>=5.12,<6.0",
-    "pytest-asyncio>=0.23,<2.0"
+    "pytest-asyncio>=0.23,<2.0",
+    "commitizen>=3.0,<4.0",
 ]
 
 
@@ -102,3 +103,12 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 python_classes = ["Test*"]
 addopts = "-ra -q"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.2.2"
+tag_format = "v$version"
+version_files = [
+    "pyproject.toml:version",
+    "src/dns_benchmark/__init__.py:__version__"
+]

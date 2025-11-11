@@ -55,4 +55,5 @@ benchmark_results/
 release.sh
 release-tag.sh
 gpg-check.sh
+{outdir}
 notes/

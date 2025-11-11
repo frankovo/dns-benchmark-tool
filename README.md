@@ -14,7 +14,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/frankovo/dns-benchmark-tool.svg?style=social&label=Fork)](https://github.com/frankovo/dns-benchmark-tool/network/members)
 [![Issues](https://img.shields.io/github/issues/frankovo/dns-benchmark-tool.svg)](https://github.com/frankovo/dns-benchmark-tool/issues)
 [![Last commit](https://img.shields.io/github/last-commit/frankovo/dns-benchmark-tool.svg)](https://github.com/frankovo/dns-benchmark-tool/commits/main)
-[![Main branch protected](https://img.shields.io/badge/branch%20protection-main%20✅-brightgreen)](./RELEASE.md)
+[![Main branch protected](https://img.shields.io/badge/branch%20protection-main%20✅-brightgreen)](https://github.com/frankovo/dns-benchmark-tool/blob/main/RELEASE.md)
 
 A powerful open-source CLI tool to benchmark DNS resolvers across domains and record types.  
 Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automation in CI/CD.
@@ -57,6 +57,7 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
   - [Use case examples](#use-case-examples)
   - [Screenshots](#screenshots)
   - [Getting help](#getting-help)
+  - [Release workflow](#release-workflow)
   - [License](#license)
   - [🛣️ Roadmap](#️-roadmap)
     - [✅ Current Release (CLI Edition)](#-current-release-cli-edition)
@@ -635,6 +636,59 @@ dns-benchmark benchmark --use-defaults --formats excel,pdf \
   --domain-stats --record-type-stats --error-breakdown --json \
   --output ./management_report
 ```
+
+---
+
+## Release workflow
+
+- **Prerequisites**
+  - **GPG key configured:** run `make gpg-check` to verify.
+  - **Branch protection:** main requires signed commits and passing CI.
+  - **CI publish:** triggered on signed tags matching vX.Y.Z.
+
+- **Prepare release (signed)**
+  - **Patch/minor/major bump:**
+  
+    ```bash
+    make release-patch      # or: make release-minor / make release-major
+    ```
+
+    - Updates versions.
+    - Creates or reuses `release/X.Y.Z`.
+    - Makes a signed commit and pushes the branch.
+  - **Open PR:** from `release/X.Y.Z` into `main`, then merge once CI passes.
+
+- **Tag and publish**
+  - **Create signed tag and push:**
+
+    ```bash
+    make release-tag VERSION=X.Y.Z
+    ```
+
+    - Tags main with `vX.Y.Z` (signed).
+    - CI publishes to PyPI.
+
+- **Manual alternative**
+  - **Create branch and commit signed:**
+  
+    ```bash
+    git checkout -b release/manually-update-version-based-on-release-pattern
+    git add .
+    git commit -S -m "Release release/$NEXT_VERSION"
+    git push origin release/$NEXT_VERSION
+    ```
+
+  - **Open PR and merge into main.**
+  - **Then tag:**
+  
+    ```bash
+    make release-tag VERSION=$NEXT_VERSION
+    ```
+
+- **Notes**
+  - **Signed commits:** `git commit -S ...`
+  - **Signed tags:** `git tag -s vX.Y.Z -m "Release vX.Y.Z"`
+  - **Version sources:** `pyproject.toml` and `src/dns_benchmark/__init__.py`
 
 ---
 

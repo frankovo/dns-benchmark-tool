@@ -14,7 +14,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/frankovo/dns-benchmark-tool.svg?style=social&label=Fork)](https://github.com/frankovo/dns-benchmark-tool/network/members)
 [![Issues](https://img.shields.io/github/issues/frankovo/dns-benchmark-tool.svg)](https://github.com/frankovo/dns-benchmark-tool/issues)
 [![Last commit](https://img.shields.io/github/last-commit/frankovo/dns-benchmark-tool.svg)](https://github.com/frankovo/dns-benchmark-tool/commits/main)
-[![Main branch protected](https://img.shields.io/badge/branch%20protection-main%20✅-brightgreen)](./RELEASE.md)
+[![Main branch protected](https://img.shields.io/badge/branch%20protection-main%20✅-brightgreen)](https://github.com/frankovo/dns-benchmark-tool/blob/main/RELEASE.md)
 
 Benchmark DNS resolvers across domains and record types.  
 Generates analytics and exports to CSV, Excel, PDF, and JSON.
