@@ -33,16 +33,16 @@ cov:
 	coverage run --source=src -m pytest -vv -s
 	coverage html
 
-test: mypy black isort flake8 cov clean
+test: mypy black isort flake8 cov
 
 clean:
 	rm -rf __pycache__ .pytest_cache .mypy_cache htmlcov .coverage coverage.xml \
 	build dist *.egg-info .eggs benchmark_results {outdir}
 
+
 cli-test:
     # Run only the CLI smoke tests marked with @pytest.mark.cli
-	pytest -vv -s -m cli tests/test_cli_commands.py \
-	clean
+	pytest -vv -s -m cli tests/test_cli_commands.py
 
 # 🔑 GPG sanity check
 gpg-check:

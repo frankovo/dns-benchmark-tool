@@ -13,15 +13,6 @@ authors = [
 license = { text = "MIT" }
 requires-python = ">=3.9"
 
-[tool.commitizen]
-name = "cz-conventional-changelog"
-version = "0.2.1"
-tag_format = "v$version"
-version_files = [
-    "pyproject.toml:version",
-    "src/dns_benchmark/__init__.py:__version__"
-]
-
 dependencies = [
     "dnspython>=2.7,<3.0",       
     "pandas>=2.0,<3.0",          
@@ -113,3 +104,11 @@ python_functions = ["test_*"]
 python_classes = ["Test*"]
 addopts = "-ra -q"
 
+[tool.commitizen]
+name = "cz-conventional-changelog"
+version = "0.2.1"
+tag_format = "v$version"
+version_files = [
+    "pyproject.toml:version",
+    "src/dns_benchmark/__init__.py:__version__"
+]
