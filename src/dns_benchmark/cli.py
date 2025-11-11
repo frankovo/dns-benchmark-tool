@@ -162,10 +162,6 @@ def benchmark(
         if not quiet:
             progress_bar = create_progress_bar(total_queries, "DNS Queries")
 
-            # progress_bar = create_progress_bar(total_queries, "DNS Queries")
-            # engine.set_progress_callback(
-            #     lambda: progress_bar.update(1) if progress_bar else None
-            # )
             # New callback signature: (completed, total)
             def _progress_cb(completed: int, total: int) -> None:
                 """TQDM-friendly progress callback.
