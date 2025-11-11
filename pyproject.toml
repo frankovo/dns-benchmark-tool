@@ -60,7 +60,6 @@ dev = [
     "isort>=5.12,<6.0",
     "pytest-asyncio>=0.23,<2.0",
     "commitizen>=3.0,<4.0",
-    "cz-conventional-changelog>=3.0,<4.0"
 ]
 
 
@@ -106,7 +105,7 @@ python_classes = ["Test*"]
 addopts = "-ra -q"
 
 [tool.commitizen]
-name = "cz-conventional-changelog"
+name = "cz_conventional_commits"
 version = "0.2.1"
 tag_format = "v$version"
 version_files = [
