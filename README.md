@@ -56,6 +56,9 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
     - [GitHub Actions example](#github-actions-example)
   - [Use case examples](#use-case-examples)
   - [Screenshots](#screenshots)
+    - [1. CLI Benchmark Run](#1-cli-benchmark-run)
+    - [2. Excel Report Output](#2-excel-report-output)
+    - [3. PDF Executive Summary](#3-pdf-executive-summary)
   - [Getting help](#getting-help)
   - [Release workflow](#release-workflow)
   - [License](#license)
@@ -596,16 +599,17 @@ Place images in `docs/screenshots/`:
 - `docs/screenshots/excel_report.png`
 - `docs/screenshots/pdf_summary.png`
 
-```markdown
 ### 1. CLI Benchmark Run
-![CLI Benchmark Run](docs/screenshots/cli_run.png)
+
+[![CLI Benchmark Run](docs/screenshots/cli_run.png)](https://github.com/frankovo/dns-benchmark-tool)
 
 ### 2. Excel Report Output
-![Excel Report Output](docs/screenshots/excel_report.png)
+
+[![Excel Report Output](docs/screenshots/excel_report.png)](https://github.com/frankovo/dns-benchmark-tool)
 
 ### 3. PDF Executive Summary
-![PDF Executive Summary](docs/screenshots/pdf_summary.png)
-```
+
+[![PDF Executive Summary](docs/screenshots/pdf_summary.png)](https://github.com/frankovo/dns-benchmark-tool)
 
 ---
 
