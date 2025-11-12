@@ -1,8 +1,14 @@
 import json
+import time
 
 import pytest
 
-from dns_benchmark.core import DNSQueryEngine, QueryStatus, ResolverManager
+from dns_benchmark.core import (
+    DNSQueryEngine,
+    DNSQueryResult,
+    QueryStatus,
+    ResolverManager,
+)
 
 
 class DummyDomain:
@@ -121,7 +127,9 @@ async def test_query_unexpected(monkeypatch):
 async def test_run_benchmark(monkeypatch):
     engine = DNSQueryEngine(max_concurrent_queries=1, timeout=0.1, max_retries=0)
 
-    async def fake_query_single(resolver_ip, resolver_name, domain, record_type="A"):
+    async def fake_query_single(
+        resolver_ip, resolver_name, domain, record_type="A", **kwargs
+    ):
         return {
             "resolver_ip": resolver_ip,
             "resolver_name": resolver_name,
@@ -132,12 +140,13 @@ async def test_run_benchmark(monkeypatch):
 
     monkeypatch.setattr(engine, "query_single", fake_query_single)
 
-    # ✅ Use "ip" instead of "resolver"
     resolvers = [{"name": "Google", "ip": "8.8.8.8"}]
     domains = ["example.com"]
     record_types = ["A", "AAAA"]
 
-    results = await engine.run_benchmark(resolvers, domains, record_types)
+    results = await engine.run_benchmark(
+        resolvers, domains, record_types, use_cache=True
+    )
 
     assert len(results) == len(resolvers) * len(domains) * len(record_types)
     assert results[0]["result"] == "ok"
@@ -160,6 +169,160 @@ async def test_run_benchmark_empty_record_types(monkeypatch):
 
     assert len(results) == 1
     assert results[0]["result"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_query_single_cache_hit(monkeypatch):
+    engine = DNSQueryEngine(enable_cache=True)
+
+    # Create a fake cached result
+    cached_result = DNSQueryResult(
+        resolver_ip="1.1.1.1",
+        resolver_name="Cloudflare",
+        domain="example.com",
+        record_type="A",
+        start_time=time.time(),
+        end_time=time.time(),
+        latency_ms=1.0,
+        status=QueryStatus.SUCCESS,
+        answers=["1.2.3.4"],
+        ttl=300,
+    )
+    cache_key = engine._get_cache_key("1.1.1.1", "example.com", "A")
+    engine.cache[cache_key] = cached_result
+
+    # Call query_single with use_cache=True
+    result = await engine.query_single(
+        resolver_ip="1.1.1.1",
+        resolver_name="Cloudflare",
+        domain="example.com",
+        record_type="A",
+        use_cache=True,
+        iteration=2,
+    )
+
+    assert result.cache_hit is True
+    assert result.iteration == 2
+    assert result.answers == ["1.2.3.4"]
+
+
+@pytest.mark.asyncio
+async def test_query_single_fallback(monkeypatch):
+    engine = DNSQueryEngine(max_retries=-1)  # force skip loop
+
+    # Patch resolver.resolve to raise if called (but it won't be called)
+    monkeypatch.setattr(
+        "dns.asyncresolver.Resolver.resolve",
+        lambda self, d, rt, raise_on_no_answer=False: (_ for _ in ()).throw(
+            Exception("boom")
+        ),
+    )
+
+    result = await engine.query_single(
+        resolver_ip="8.8.8.8",
+        resolver_name="Google",
+        domain="example.com",
+        record_type="A",
+        use_cache=False,
+        iteration=1,
+    )
+
+    assert result.status == QueryStatus.UNKNOWN_ERROR
+    assert "Unexpected error" in result.error_message
+    assert result.cache_hit is False
+
+
+@pytest.mark.asyncio
+async def test_run_benchmark_with_warmup(monkeypatch, capsys):
+    engine = DNSQueryEngine()
+
+    # Fake query_single that always returns SUCCESS
+    async def fake_query_single(
+        resolver_ip, resolver_name, domain, record_type="A", **kwargs
+    ):
+        return DNSQueryResult(
+            resolver_ip=resolver_ip,
+            resolver_name=resolver_name,
+            domain=domain,
+            record_type=record_type,
+            start_time=0,
+            end_time=0,
+            latency_ms=0,
+            status=QueryStatus.SUCCESS,
+            answers=["dummy"],
+            ttl=60,
+            iteration=kwargs.get("iteration", 0),
+            cache_hit=False,
+        )
+
+    monkeypatch.setattr(engine, "query_single", fake_query_single)
+
+    resolvers = [{"name": "Google", "ip": "8.8.8.8"}]
+    domains = ["example.com"]
+
+    # Exercise the warmup branch
+    results = await engine.run_benchmark(resolvers, domains, ["A"], warmup=True)
+    assert all(r.status == QueryStatus.SUCCESS for r in results)
+
+
+@pytest.mark.asyncio
+async def test_run_benchmark_with_warmup_fast_and_failure(monkeypatch, capsys):
+    engine = DNSQueryEngine()
+
+    # Fake query_single that returns a failure status
+    async def fake_query_single(
+        resolver_ip, resolver_name, domain, record_type="A", **kwargs
+    ):
+        return DNSQueryResult(
+            resolver_ip=resolver_ip,
+            resolver_name=resolver_name,
+            domain=domain,
+            record_type=record_type,
+            start_time=0,
+            end_time=0,
+            latency_ms=0,
+            status=QueryStatus.TIMEOUT,  # force failure
+            answers=[],
+            ttl=None,
+            iteration=kwargs.get("iteration", 0),
+            cache_hit=False,
+        )
+
+    monkeypatch.setattr(engine, "query_single", fake_query_single)
+
+    resolvers = [{"name": "Google", "ip": "8.8.8.8"}]
+    domains = ["example.com"]
+
+    # Exercise warmup_fast branch and failure reporting
+    results = await engine.run_benchmark(resolvers, domains, ["A"], warmup_fast=True)
+
+    # Capture printed warning
+    captured = capsys.readouterr()
+    assert "Warmup failed" in captured.out
+    assert all(r.status == QueryStatus.TIMEOUT for r in results)
+
+
+def test_clear_cache():
+    engine = DNSQueryEngine(enable_cache=True)
+
+    # Insert a fake cached result
+    result = DNSQueryResult(
+        resolver_ip="1.1.1.1",
+        resolver_name="Cloudflare",
+        domain="example.com",
+        record_type="A",
+        start_time=time.time(),
+        end_time=time.time(),
+        latency_ms=1.0,
+        status=QueryStatus.SUCCESS,
+        answers=["1.2.3.4"],
+        ttl=300,
+    )
+    engine.cache["1.1.1.1:example.com:A"] = result
+
+    assert len(engine.cache) == 1
+    engine.clear_cache()
+    assert len(engine.cache) == 0
 
 
 def test_get_default_resolvers():

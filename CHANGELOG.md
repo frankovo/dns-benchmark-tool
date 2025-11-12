@@ -1,3 +1,9 @@
+## v0.2.4 (2025-11-13)
+
+### Feat
+
+- **core,-cli**: add iteration tracking, cache handling, and CLI improvements
+
 ## v0.2.3 (2025-11-11)
 
 ## v0.2.2 (2025-11-11)

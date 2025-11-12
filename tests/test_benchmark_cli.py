@@ -4,7 +4,54 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from dns_benchmark.cli import cli
+from dns_benchmark.cli import cli, create_progress_bar
+
+
+def test_cli_configuration_and_warmup(monkeypatch):
+    runner = CliRunner()
+
+    # Patch managers to return dummy data
+    monkeypatch.setattr(
+        "dns_benchmark.cli.ResolverManager.get_default_resolvers",
+        lambda: [{"name": "Google", "ip": "8.8.8.8"}],
+    )
+    monkeypatch.setattr(
+        "dns_benchmark.cli.DomainManager.get_sample_domains", lambda: ["example.com"]
+    )
+
+    # Patch engine.run_benchmark to be async
+    class DummyResult:
+        cache_hit = False
+
+    async def fake_run_benchmark(*a, **k):
+        return [DummyResult()]
+
+    monkeypatch.setattr(
+        "dns_benchmark.cli.DNSQueryEngine.run_benchmark", fake_run_benchmark
+    )
+
+    # Patch BenchmarkAnalyzer to return dummy stats
+    class DummyAnalyzer:
+        def __init__(self, results):
+            pass
+
+        def get_overall_statistics(self):
+            return {
+                "total_queries": 1,
+                "successful_queries": 1,
+                "overall_success_rate": 100.0,
+                "overall_avg_latency": 1.0,
+                "overall_median_latency": 1.0,
+                "fastest_resolver": "Google",
+                "slowest_resolver": "Google",
+            }
+
+    monkeypatch.setattr("dns_benchmark.cli.BenchmarkAnalyzer", DummyAnalyzer)
+
+    result = runner.invoke(cli, ["benchmark", "--use-defaults", "--warmup"])
+    assert "Configuration:" in result.output
+    assert "Running full warmup queries..." in result.output
+    assert "=== BENCHMARK SUMMARY ===" in result.output
 
 
 def test_benchmark_exports_csv_excel_pdf_json(tmp_path, sample_results):
@@ -74,3 +121,70 @@ def test_benchmark_exports_csv_excel_pdf_json(tmp_path, sample_results):
     assert "domain_stats" in data and isinstance(data["domain_stats"], list)
     assert "record_type_stats" in data and isinstance(data["record_type_stats"], list)
     assert "error_stats" in data and isinstance(data["error_stats"], dict)
+
+
+def test_create_progress_bar():
+    bar = create_progress_bar(5, "Testing")
+    assert bar.total == 5
+    assert "Testing" in bar.desc
+    bar.close()
+
+
+def test_cli_validate_inputs_missing_files():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["benchmark", "--record-types", "A"])
+    assert result.exit_code == 0
+    assert (
+        "Either provide --resolvers and --domains or use --use-defaults"
+        in result.output
+    )
+
+
+def test_cli_invalid_format():
+    runner = CliRunner()
+    # Use defaults so resolvers/domains load
+    result = runner.invoke(cli, ["benchmark", "--use-defaults", "--formats", "badfmt"])
+    assert result.exit_code == 0
+    assert "Invalid format" in result.output
+
+
+def test_cli_domain_file_not_found(monkeypatch):
+    runner = CliRunner()
+
+    # Make resolver loading succeed
+    monkeypatch.setattr(
+        "dns_benchmark.cli.ResolverManager.load_resolvers_from_file",
+        lambda path: [{"name": "Google", "ip": "8.8.8.8"}],
+    )
+
+    # Force domain loading to raise FileNotFoundError
+    monkeypatch.setattr(
+        "dns_benchmark.cli.DomainManager.load_domains_from_file",
+        lambda path: (_ for _ in ()).throw(FileNotFoundError("missing.txt")),
+    )
+
+    result = runner.invoke(
+        cli, ["benchmark", "--resolvers", "resolvers.json", "--domains", "missing.txt"]
+    )
+    assert "Domain file not found" in result.output
+
+
+def test_cli_domain_generic_error(monkeypatch):
+    runner = CliRunner()
+
+    # Make resolver loading succeed
+    monkeypatch.setattr(
+        "dns_benchmark.cli.ResolverManager.load_resolvers_from_file",
+        lambda path: [{"name": "Google", "ip": "8.8.8.8"}],
+    )
+
+    # Force domain loading to raise generic Exception
+    monkeypatch.setattr(
+        "dns_benchmark.cli.DomainManager.load_domains_from_file",
+        lambda path: (_ for _ in ()).throw(Exception("boom")),
+    )
+
+    result = runner.invoke(
+        cli, ["benchmark", "--resolvers", "resolvers.json", "--domains", "bad.txt"]
+    )
+    assert "Error loading domains" in result.output
