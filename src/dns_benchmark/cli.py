@@ -79,6 +79,15 @@ def create_progress_bar(total: int, desc: str) -> Any:
 )
 @click.option("--error-breakdown", is_flag=True, help="Include error breakdown")
 @click.option("--json", "json_output", is_flag=True, help="Export results to JSON")
+# NEW options
+@click.option("--iterations", "-i", default=1, help="Number of iterations")
+@click.option("--warmup", is_flag=True, help="Run warmup queries before benchmark")
+@click.option("--use-cache", is_flag=True, help="Allow cache usage across iterations")
+@click.option(
+    "--warmup-fast",
+    is_flag=True,
+    help="Run lightweight warmup (one probe per resolver)",
+)
 def benchmark(
     resolvers: Optional[str],
     domains: Optional[str],
@@ -94,6 +103,10 @@ def benchmark(
     record_type_stats: bool,
     error_breakdown: bool,
     json_output: bool,
+    iterations: int,
+    warmup: bool,
+    warmup_fast: bool,
+    use_cache: bool,
 ) -> None:
     """Run DNS benchmark test."""
 
@@ -122,31 +135,66 @@ def benchmark(
     output_path = Path(output)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Load resolvers
-    if use_defaults:
-        resolver_list = ResolverManager.get_default_resolvers()
-        if not quiet:
-            click.echo(
-                success(f"Using default resolvers ({len(resolver_list)} resolvers)")
+    # Load resolvers with error handling
+    try:
+        if use_defaults:
+            resolver_list = ResolverManager.get_default_resolvers()
+            if not quiet:
+                click.echo(
+                    success(f"Using default resolvers ({len(resolver_list)} resolvers)")
+                )
+        else:
+            resolver_list = ResolverManager.load_resolvers_from_file(
+                resolvers if resolvers else ""
             )
-    else:
-        resolver_list = ResolverManager.load_resolvers_from_file(
-            resolvers if resolvers else ""
-        )
+            if not quiet:
+                click.echo(success(f"Loaded {len(resolver_list)} resolvers"))
+    except FileNotFoundError as e:
+        click.echo(error(f"Resolver file not found: {e}"))
+        return
+    except Exception as e:
+        click.echo(error(f"Error loading resolvers: {e}"))
+        return
 
-    # Load domains
-    if use_defaults:
-        domain_list = DomainManager.get_sample_domains()
-        if not quiet:
-            click.echo(success(f"Using sample domains ({len(domain_list)} domains)"))
-    else:
-        domain_list = DomainManager.load_domains_from_file(domains if domains else "")
+    # Load domains with error handling
+    try:
+        if use_defaults:
+            domain_list = DomainManager.get_sample_domains()
+            if not quiet:
+                click.echo(
+                    success(f"Using sample domains ({len(domain_list)} domains)")
+                )
+        else:
+            domain_list = DomainManager.load_domains_from_file(
+                domains if domains else ""
+            )
+            if not quiet:
+                click.echo(success(f"Loaded {len(domain_list)} domains"))
+    except FileNotFoundError as e:
+        click.echo(error(f"Domain file not found: {e}"))
+        return
+    except Exception as e:
+        click.echo(error(f"Error loading domains: {e}"))
+        return
 
     # Calculate total queries
-    total_queries = len(resolver_list) * len(domain_list) * len(record_type_list)
+    total_queries = (
+        len(resolver_list) * len(domain_list) * len(record_type_list) * iterations
+    )
     if not quiet:
-        click.echo(info(f"Total queries to execute: {total_queries}"))
-        click.echo(info(f"Record types: {', '.join(record_type_list)}"))
+        click.echo(info("Configuration:"))
+        click.echo(info(f"- Resolvers: {len(resolver_list)}"))
+        click.echo(info(f"- Domains: {len(domain_list)}"))
+        click.echo(info(f"- Record types: {', '.join(record_type_list)}"))
+        click.echo(info(f"- Iterations: {iterations}"))
+        click.echo(info(f"- Total queries: {total_queries}"))
+        if use_cache:
+            click.echo(info("- Cache enabled: queries may be reused across iterations"))
+
+    # Show warmup message
+    if (warmup or warmup_fast) and not quiet:
+        warmup_type = "fast" if warmup_fast else "full"
+        click.echo(info(f"Running {warmup_type} warmup queries..."))
 
     # Run benchmark
     if not quiet:
@@ -155,24 +203,26 @@ def benchmark(
 
     try:
         engine = DNSQueryEngine(
-            max_concurrent_queries=max_concurrent, timeout=timeout, max_retries=retries
+            max_concurrent_queries=max_concurrent,
+            timeout=timeout,
+            max_retries=retries,
+            enable_cache=use_cache,
         )
 
         progress_bar = None
         if not quiet:
             progress_bar = create_progress_bar(total_queries, "DNS Queries")
 
-            # New callback signature: (completed, total)
             def _progress_cb(completed: int, total: int) -> None:
                 """TQDM-friendly progress callback.
 
-                Advances the bar by 1 per completed item and sets a postfix like '23/100'.
+                Sets the absolute position of the progress bar.
                 Keep this callback fast and non-blocking.
                 """
                 try:
                     if progress_bar:
-                        progress_bar.update(1)
-                        progress_bar.set_postfix_str(f"{completed}/{total}")
+                        progress_bar.n = completed  # Absolute position
+                        progress_bar.refresh()
                 except Exception:
                     # Never allow progress callback errors to interrupt benchmarking
                     pass
@@ -184,6 +234,10 @@ def benchmark(
                 resolvers=resolver_list,
                 domains=domain_list,
                 record_types=record_type_list,
+                iterations=iterations,
+                warmup=warmup,
+                warmup_fast=warmup_fast,
+                use_cache=use_cache,
             )
         )
 
@@ -208,6 +262,15 @@ def benchmark(
                 f"Fastest resolver: {overall_stats['fastest_resolver']}",
                 f"Slowest resolver: {overall_stats['slowest_resolver']}",
             ]
+            # Add iteration info if multiple iterations
+            if iterations > 1:
+                cache_hits = sum(1 for r in results if r.cache_hit)
+                summary_lines.append(f"Iterations: {iterations}")
+                if use_cache and cache_hits > 0:
+                    summary_lines.append(
+                        f"Cache hits: {cache_hits} ({cache_hits / len(results) * 100:.1f}%)"
+                    )
+
             click.echo(summary_box(summary_lines))
 
         # Optional analytics
@@ -224,8 +287,9 @@ def benchmark(
         if not quiet:
             click.echo(warning("Exporting results..."))
 
+        export_count = len(output_formats) + (1 if json_output else 0)
         export_progress = (
-            create_progress_bar(len(output_formats), "Exporting") if not quiet else None
+            create_progress_bar(export_count, "Exporting") if not quiet else None
         )
 
         try:
@@ -276,24 +340,30 @@ def benchmark(
                 if export_progress:
                     export_progress.update(1)
 
+            # JSON export now tracked in progress
+            if json_output:
+                ExportBundle.export_json(
+                    results,
+                    analyzer,
+                    domain_stats=domain_stats_data,
+                    record_type_stats=record_type_stats_data,
+                    error_stats=error_stats_data,
+                    output_path=str(output_path / f"{base_filename}.json"),
+                )
+                if export_progress:
+                    export_progress.update(1)
+
             if not quiet:
                 click.echo(success("All exports completed successfully!"))
+                click.echo(info(f"Results saved to: {output_path}"))
 
         finally:
             if export_progress:
                 export_progress.close()
 
-        # JSON export
-        if json_output:
-            ExportBundle.export_json(
-                results,
-                analyzer,
-                domain_stats=domain_stats_data,
-                record_type_stats=record_type_stats_data,
-                error_stats=error_stats_data,
-                output_path=str(output_path / f"{base_filename}.json"),
-            )
-
+    except KeyboardInterrupt:
+        click.echo(warning("\nBenchmark interrupted by user"))
+        return
     except Exception as e:
         click.echo(error(f"Error during benchmark: {e}"))
         raise
