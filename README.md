@@ -40,6 +40,10 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
       - [Domain management](#domain-management)
       - [Category overview](#category-overview)
     - [3) Configuration management](#3-configuration-management)
+  - [🔍 README Adjustments for Final Patch](#-readme-adjustments-for-final-patch)
+    - [New CLI Options](#new-cli-options)
+    - [📊 Analysis Enhancements](#-analysis-enhancements)
+    - [⚡ Best Practices](#-best-practices)
   - [Data files structure](#data-files-structure)
     - [Resolvers JSON format](#resolvers-json-format)
     - [Domains text file format](#domains-text-file-format)
@@ -380,6 +384,51 @@ dns-benchmark generate-config --category privacy --output privacy_audit.yaml
 ```
 
 ---
+
+## 🔍 README Adjustments for Final Patch
+
+### New CLI Options
+
+| Option             | Description                                                                 | Example                                                                 |
+|--------------------|-----------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| `--iterations, -i` | Run the full benchmark loop **N times**                                     | `dns-benchmark benchmark --use-defaults -i 3`                           |
+| `--use-cache`      | Allow cached results to be reused across iterations                         | `dns-benchmark benchmark --use-defaults -i 3 --use-cache`               |
+| `--warmup`         | Run a **full warmup** (all resolvers × domains × record types)              | `dns-benchmark benchmark --use-defaults --warmup`                       |
+| `--warmup-fast`    | Run a **lightweight warmup** (one probe per resolver)                       | `dns-benchmark benchmark --use-defaults --warmup-fast`                  |
+
+---
+
+### 📊 Analysis Enhancements
+
+- **Iteration count**: displayed when more than one iteration is run.  
+- **Cache hits**: shows how many queries were served from cache (when `--use-cache` is enabled).  
+- **Failure tracking**: resolvers with repeated errors are counted and can be inspected with `get_failed_resolvers()`.  
+- **Cache statistics**: available via `get_cache_stats()`, showing number of cached entries and whether cache is enabled.  
+- **Warmup results**: warmup queries are marked with `iteration=0` in raw data, making them easy to filter out in analysis.  
+
+Example summary output:
+
+```markdown
+
+=== BENCHMARK SUMMARY ===
+Total queries: 150
+Successful: 140 (93.33%)
+Average latency: 212.45 ms
+Median latency: 198.12 ms
+Fastest resolver: Cloudflare
+Slowest resolver: Quad9
+Iterations: 3
+Cache hits: 40 (26.7%)
+```
+
+### ⚡ Best Practices
+
+| Mode            | Recommended Flags                                                                 | Purpose                                                                 |
+|-----------------|------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| **Quick Run**   | `--iterations 1 --timeout 1 --retries 0 --warmup-fast`                             | Fast feedback, minimal retries, lightweight warmup. Good for quick checks. |
+| **Thorough Run**| `--iterations 3 --use-cache --warmup --timeout 5 --retries 2`                      | Multiple passes, cache enabled, full warmup. Best for detailed benchmarking. |
+| **Debug Mode**  | `--iterations 1 --timeout 10 --retries 0 --quiet`                                  | Long timeout, no retries, minimal output. Useful for diagnosing resolver issues. |
+| **Balanced Run**| `--iterations 2 --use-cache --warmup-fast --timeout 2 --retries 1`                 | A middle ground: moderate speed, some retries, cache enabled, quick warmup. |
 
 ## Data files structure
 
