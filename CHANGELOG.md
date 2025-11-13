@@ -1,3 +1,14 @@
+## v0.2.5 (2025-11-13)
+
+### Feat
+
+- **core,-cli**: add iteration tracking, cache handling, and CLI improvements
+
+### Fix
+
+- **release**: sync version files to 0.2.5 before bump
+- **core**: lazy-init asyncio primitives to avoid event loop errors
+
 ## v0.2.4 (2025-11-13)
 
 ### Feat
