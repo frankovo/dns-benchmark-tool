@@ -66,7 +66,9 @@ class DNSQueryEngine:
         self.max_concurrent_queries = max_concurrent_queries
         self.timeout = timeout
         self.max_retries = max_retries
-        self.semaphore = asyncio.Semaphore(max_concurrent_queries)
+        # lazy-init async primitives to avoid creating them outside an event loop
+        self.semaphore: Optional[asyncio.Semaphore] = None
+        self._lock: Optional[asyncio.Lock] = None
         self.progress_callback: Optional[Callable[[int, int], None]] = None
         self.query_counter = 0
         self.total_queries = 0
@@ -75,7 +77,13 @@ class DNSQueryEngine:
         self.retry_backoff_multiplier = retry_backoff_multiplier
         self.retry_backoff_base = retry_backoff_base
         self.failed_resolvers: Dict[str, int] = defaultdict(int)
-        self._lock = asyncio.Lock()
+
+    async def _ensure_async_primitives(self) -> None:
+        """Create asyncio primitives when running inside an event loop."""
+        if self.semaphore is None:
+            self.semaphore = asyncio.Semaphore(self.max_concurrent_queries)
+        if self._lock is None:
+            self._lock = asyncio.Lock()
 
     def set_progress_callback(self, callback: Callable[[int, int], None]) -> None:
         """Set callback for progress updates with completed/total counts."""
@@ -87,6 +95,8 @@ class DNSQueryEngine:
 
     async def _update_progress(self) -> None:
         """Thread-safe progress update."""
+        await self._ensure_async_primitives()
+        assert self._lock is not None
         async with self._lock:
             self.query_counter += 1
             if self.progress_callback:
@@ -109,6 +119,8 @@ class DNSQueryEngine:
         iteration: int = 1,
     ) -> DNSQueryResult:
         """Execute a single DNS query with retry logic and caching."""
+        await self._ensure_async_primitives()
+        assert self.semaphore is not None
         # Check cache if enabled
         if self.enable_cache and use_cache:
             cache_key = self._get_cache_key(resolver_ip, domain, record_type)
@@ -178,6 +190,7 @@ class DNSQueryEngine:
             except dns.exception.Timeout:
                 if attempt == self.max_retries:
                     end_time = time.time()
+                    assert self._lock is not None
                     async with self._lock:
                         self.failed_resolvers[resolver_ip] += 1
                     result = DNSQueryResult(
@@ -228,6 +241,7 @@ class DNSQueryEngine:
             except dns.resolver.NoNameservers:
                 # Server failure, no retry needed
                 end_time = time.time()
+                assert self._lock is not None
                 async with self._lock:
                     self.failed_resolvers[resolver_ip] += 1
                 result = DNSQueryResult(
@@ -255,7 +269,7 @@ class DNSQueryEngine:
                     error_status = QueryStatus.UNKNOWN_ERROR
                     if "refused" in str(e).lower():
                         error_status = QueryStatus.CONNECTION_REFUSED
-
+                    assert self._lock is not None  # mypy now knows _lock is Lock
                     async with self._lock:
                         self.failed_resolvers[resolver_ip] += 1
 
