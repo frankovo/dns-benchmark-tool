@@ -20,6 +20,11 @@ COMMANDS = [
     f"dns-benchmark benchmark --resolvers {RESOLVERS} --domains {DOMAINS} --record-types A,AAAA,MX --output {{outdir}}",
     f"dns-benchmark benchmark --resolvers {RESOLVERS} --domains {DOMAINS} --domain-stats --record-type-stats --error-breakdown --output {{outdir}}",
     f"dns-benchmark benchmark --resolvers {RESOLVERS} --domains {DOMAINS} --json --output {{outdir}}",
+    # New options smoke tests
+    f"dns-benchmark benchmark --resolvers {RESOLVERS} --domains {DOMAINS} --iterations 2 --output {{outdir}}",
+    f"dns-benchmark benchmark --resolvers {RESOLVERS} --domains {DOMAINS} --iterations 2 --use-cache --output {{outdir}}",
+    f"dns-benchmark benchmark --resolvers {RESOLVERS} --domains {DOMAINS} --warmup --output {{outdir}}",
+    f"dns-benchmark benchmark --resolvers {RESOLVERS} --domains {DOMAINS} --warmup-fast --output {{outdir}}",
     # Information & discovery
     "dns-benchmark list-defaults",
     "dns-benchmark list-resolvers",

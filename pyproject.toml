@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dns-benchmark-tool"
-version = "0.2.3"
+version = "0.2.6"
 description = "Benchmark DNS resolvers across domains and record types with analytics and reports (CSV, Excel, PDF, JSON)."
 readme = "README-pypi.md"
 authors = [
@@ -25,7 +25,8 @@ dependencies = [
     "openpyxl>=3.1,<4.0",        
     "pyyaml>=6.0,<7.0",          
     "tqdm>=4.66,<5.0",           
-    "matplotlib>=3.8,<4.0"
+    "matplotlib>=3.8,<4.0",
+    "seaborn>=0.13.2,<0.14.0"
 ]
 
 classifiers = [
@@ -106,7 +107,7 @@ addopts = "-ra -q"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.2.3"
+version = "0.2.6"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",
