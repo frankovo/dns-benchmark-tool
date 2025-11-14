@@ -106,7 +106,7 @@ export DNS_BENCHMARK_NO_FEEDBACK=1
 ## Links
 
 - **GitHub:** https://github.com/frankovo/dns-benchmark-tool
-- **Documentation:** Full usage guide, advanced examples, and screenshots are available.
+- **Documentation:** Full usage guide, advanced examples, and screenshots are available on [GitHub](https://github.com/frankovo/dns-benchmark-tool).
 - **Issues:** https://github.com/frankovo/dns-benchmark-tool/issues
 - **PyPI:** https://pypi.org/project/dns-benchmark-tool/
 - **Feedback Survey:** https://forms.gle/BJBiyBFvRJHskyR57
