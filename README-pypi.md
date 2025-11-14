@@ -2,7 +2,7 @@
 
 <div align="center">
 
-## 🎉 999+ Downloads in 5 Days! 🎉
+## 🎉 1000+ Downloads in 5 Days! 🎉
 
 🙏 Thank you to our amazing community!
 📢 Help shape the roadmap: [**Take 2-min survey →**](https://forms.gle/BJBiyBFvRJHskyR57)
@@ -46,22 +46,81 @@ dns-benchmark benchmark --use-defaults
 dns-benchmark benchmark --resolvers data/resolvers.json --domains data/domains.txt
 ```
 
-## Features
+## Key Features
 
-- Compare DNS resolver performance globally
-- Export results to CSV, Excel, PDF, JSON
-- Domain and record‑type statistics
-- Error breakdowns
-- Automation support (cron jobs, CI/CD)
+✅ **Multi-resolver benchmarking** - Compare Google, Cloudflare, Quad9, OpenDNS, and custom resolvers  
+✅ **Multiple record types** - Test A, AAAA, MX, TXT, NS, CNAME, and more  
+✅ **Rich analytics** - Per-resolver, per-domain, and per-record-type statistics  
+✅ **Export formats** - CSV, Excel, PDF, JSON for reporting and automation  
+✅ **High concurrency** - Async queries with configurable limits  
+✅ **Cache control** - Test with/without DNS caching  
+✅ **Iteration support** - Run multiple test iterations for reliability  
+✅ **CI/CD ready** - Quiet mode, JSON output, exit codes for automation  
 
-## Documentation
+---
 
-Full usage guide, advanced examples, and screenshots are available on [GitHub](https://github.com/frankovo/dns-benchmark-tool).
+## Feedback & Community
+
+### Share Your Input
+
+Help us improve dns-benchmark! Share your DNS challenges and feature requests:
+
+```bash
+dns-benchmark feedback
+```
+
+Opens a 2-minute survey that directly shapes our roadmap: https://forms.gle/BJBiyBFvRJHskyR57
+
+### Smart Prompts (Non-Intrusive)
+
+The tool occasionally shows a feedback prompt:
+
+- Only after runs **5, 15, and 30** (not random)
+- With **24-hour cooldown** between prompts
+- Stops after you submit feedback or dismiss 3 times
+
+### Privacy First
+
+**Local storage only:** State stored in `~/.dns-benchmark/feedback.json`  
+**No telemetry:** Zero automatic data collection  
+**Full control:** Multiple opt-out options available
+
+### Opt Out
+
+**Dismiss when prompted:**
+
+```bash
+Show this again? (y/n) [y]: n
+```
+
+**Environment variable (permanent):**
+
+```bash
+export DNS_BENCHMARK_NO_FEEDBACK=1
+```
+
+**Auto-disabled in CI/CD:** Respects `CI=true` and `--quiet` flag
+
+---
+
+## Links
+
+- **GitHub:** https://github.com/frankovo/dns-benchmark-tool
+- **Documentation:** Full usage guide, advanced examples, and screenshots are available.
+- **Issues:** https://github.com/frankovo/dns-benchmark-tool/issues
+- **PyPI:** https://pypi.org/project/dns-benchmark-tool/
+- **Feedback Survey:** https://forms.gle/BJBiyBFvRJHskyR57
 
 ---
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](https://github.com/frankovo/dns-benchmark-tool/blob/main/LICENSE) file for details.
 
 ---
+
+## Contributing
+
+Contributions welcome! Please check our [GitHub repository](https://github.com/frankovo/dns-benchmark-tool) for guidelines.
+
+**Help us improve:** Run `dns-benchmark feedback` to share your experience! 🙏

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-## 🎉 999+ Downloads in 5 Days! 🎉
+## 🎉 1000+ Downloads in 5 Days! 🎉
 
 🙏 Thank you to our amazing community!
 📢 Help shape the roadmap: [**Take 2-min survey →**](https://forms.gle/BJBiyBFvRJHskyR57)
@@ -33,7 +33,7 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
 ## Table of Contents
 
 - [DNS Benchmark Tool](#dns-benchmark-tool)
-  - [🎉 999+ Downloads in 5 Days! 🎉](#-999-downloads-in-5-days-)
+  - [🎉 1000+ Downloads in 5 Days! 🎉](#-1000-downloads-in-5-days-)
   - [Table of Contents](#table-of-contents)
   - [Quick start](#quick-start)
     - [Installation](#installation)
@@ -56,6 +56,11 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
     - [New CLI Options](#new-cli-options)
     - [📊 Analysis Enhancements](#-analysis-enhancements)
     - [⚡ Best Practices](#-best-practices)
+  - [Feedback \& Community Input](#feedback--community-input)
+    - [Feedback Command](#feedback-command)
+    - [Smart Feedback Prompts](#smart-feedback-prompts)
+    - [Privacy \& Data Storage](#privacy--data-storage)
+    - [Opting Out](#opting-out)
   - [Data files structure](#data-files-structure)
     - [Resolvers JSON format](#resolvers-json-format)
     - [Domains text file format](#domains-text-file-format)
@@ -441,6 +446,129 @@ Cache hits: 40 (26.7%)
 | **Thorough Run**| `--iterations 3 --use-cache --warmup --timeout 5 --retries 2`                      | Multiple passes, cache enabled, full warmup. Best for detailed benchmarking. |
 | **Debug Mode**  | `--iterations 1 --timeout 10 --retries 0 --quiet`                                  | Long timeout, no retries, minimal output. Useful for diagnosing resolver issues. |
 | **Balanced Run**| `--iterations 2 --use-cache --warmup-fast --timeout 2 --retries 1`                 | A middle ground: moderate speed, some retries, cache enabled, quick warmup. |
+
+## Feedback & Community Input
+
+We value your input! Help us improve dns-benchmark by sharing your experience and DNS challenges.
+
+### Feedback Command
+
+Open the feedback form directly from CLI:
+
+```bash
+dns-benchmark feedback
+```
+
+This command:
+
+- Opens the feedback survey in your default browser
+- Takes ~2 minutes to complete
+- Directly shapes our roadmap and priorities
+- Automatically marks feedback as given (won't prompt again)
+
+**Survey link:** https://forms.gle/BJBiyBFvRJHskyR57
+
+### Smart Feedback Prompts
+
+To avoid being intrusive, dns-benchmark uses intelligent prompting:
+
+**When prompts appear:**
+
+- After your **5th, 15th, and 30th** benchmark run
+- With a **24-hour cooldown** between prompts
+- Only if you haven't already given feedback
+
+**Auto-dismiss conditions:**
+
+- You've already submitted feedback
+- You've dismissed the prompt 3 times
+- You've opted out via environment variable
+
+**Example prompt:**
+```
+──────────────────────────────────────────────────────────
+📢 Quick feedback request
+Help shape dns-benchmark! Share your biggest DNS challenge.
+→ https://forms.gle/BJBiyBFvRJHskyR57 (2 min survey)
+→ Or run: dns-benchmark feedback
+──────────────────────────────────────────────────────────
+
+Show this again? (y/n) [y]:
+```
+
+### Privacy & Data Storage
+
+**What we store locally:**
+dns-benchmark stores feedback prompt state in `~/.dns-benchmark/feedback.json`
+
+**Contents:**
+
+```json
+{
+  "total_runs": 15,
+  "feedback_given": false,
+  "dismissed_count": 0,
+  "last_shown": 1699876543,
+  "version": "1.0"
+}
+```
+
+**Privacy notes:**
+
+- ✅ All data stored **locally** on your machine
+- ✅ No telemetry or tracking
+- ✅ No automatic data transmission
+- ✅ File is only read/written during benchmark runs
+- ✅ Safe to delete at any time
+
+**What we collect (only when you submit feedback):**
+
+- Whatever you choose to share in the survey
+- We never collect usage data automatically
+
+### Opting Out
+
+**Method 1: Dismiss the prompt**
+When prompted, type `n` to dismiss:
+```
+Show this again? (y/n) [y]: n
+✓ Got it! We won't ask again. Thanks for using dns-benchmark!
+```
+
+After 3 dismissals, prompts stop permanently.
+
+**Method 2: Environment variable (complete disable)**
+
+```bash
+# Bash/Zsh
+export DNS_BENCHMARK_NO_FEEDBACK=1
+
+# Windows PowerShell
+$env:DNS_BENCHMARK_NO_FEEDBACK="1"
+
+# Permanently (add to ~/.bashrc or ~/.zshrc)
+echo 'export DNS_BENCHMARK_NO_FEEDBACK=1' >> ~/.bashrc
+```
+
+**Method 3: Delete state file**
+
+```bash
+rm ~/.dns-benchmark/feedback.json
+```
+
+**Method 4: CI/CD environments**
+Feedback prompts are automatically disabled when:
+
+- `CI=true` environment variable is set (standard in GitHub Actions, GitLab CI, etc.)
+- `--quiet` flag is used
+
+**Reset for testing (developers):**
+
+```bash
+dns-benchmark reset-feedback  # Hidden command
+```
+
+---
 
 ## Data files structure
 
