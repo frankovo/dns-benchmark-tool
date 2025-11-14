@@ -1,10 +1,29 @@
 import json
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import click
+import pytest
 from click.testing import CliRunner
 
-from dns_benchmark.cli import cli, create_progress_bar
+from dns_benchmark.cli import (
+    FeedbackManager,
+    cli,
+    create_progress_bar,
+    feedback,
+    reset_feedback,
+    show_feedback_prompt,
+)
+
+
+@pytest.fixture
+def temp_config_dir(monkeypatch):
+    """Use a temporary directory for feedback state."""
+    tmpdir = tempfile.TemporaryDirectory()
+    monkeypatch.setattr(Path, "home", lambda: Path(tmpdir.name))
+    yield Path(tmpdir.name)
+    tmpdir.cleanup()
 
 
 def test_cli_configuration_and_warmup(monkeypatch):
@@ -188,3 +207,107 @@ def test_cli_domain_generic_error(monkeypatch):
         cli, ["benchmark", "--resolvers", "resolvers.json", "--domains", "bad.txt"]
     )
     assert "Error loading domains" in result.output
+
+
+def test_load_and_save_state(temp_config_dir):
+    manager = FeedbackManager()
+    state = manager._get_default_state()
+    manager._save_state(state)
+
+    loaded = manager._load_state()
+    assert loaded == state
+
+
+def test_should_show_prompt_threshold(temp_config_dir, monkeypatch):
+    manager = FeedbackManager()
+    state = manager._get_default_state()
+    state["total_runs"] = 5
+    state["last_shown"] = 0
+    manager._save_state(state)
+
+    # Force time to be > 24h later
+    monkeypatch.setattr("time.time", lambda: 60 * 60 * 25)
+    assert manager.should_show_prompt() is True
+
+
+def test_mark_feedback_given(temp_config_dir):
+    manager = FeedbackManager()
+    manager.mark_feedback_given()
+    state = manager._load_state()
+    assert state["feedback_given"] is True
+
+
+def test_mark_dismissed(temp_config_dir):
+    manager = FeedbackManager()
+    manager.mark_dismissed()
+    state = manager._load_state()
+    assert state["dismissed_count"] == 1
+
+
+def test_show_feedback_prompt_yes(monkeypatch, temp_config_dir):
+    manager = FeedbackManager()
+    state = manager._get_default_state()
+    state["total_runs"] = 5
+    state["last_shown"] = 0
+    manager._save_state(state)
+
+    monkeypatch.setattr("time.time", lambda: 60 * 60 * 25)
+    monkeypatch.setattr(click, "prompt", lambda *a, **k: "y")
+
+    # Should not mark dismissed
+    show_feedback_prompt()
+    state = manager._load_state()
+    assert state["dismissed_count"] == 0
+
+
+def test_show_feedback_prompt_no(monkeypatch, temp_config_dir):
+    manager = FeedbackManager()
+    state = manager._get_default_state()
+    state["total_runs"] = 5
+    state["last_shown"] = 0
+    manager._save_state(state)
+
+    monkeypatch.setattr("time.time", lambda: 60 * 60 * 25)
+    monkeypatch.setattr(click, "prompt", lambda *a, **k: "n")
+
+    show_feedback_prompt()
+    state = manager._load_state()
+    assert state["dismissed_count"] == 1
+
+
+def test_feedback_command(monkeypatch, temp_config_dir):
+    runner = CliRunner()
+    monkeypatch.setattr("webbrowser.open", lambda url: True)
+
+    result = runner.invoke(feedback)
+    assert result.exit_code == 0
+
+    manager = FeedbackManager()
+    state = manager._load_state()
+    assert state["feedback_given"] is True
+
+
+def test_reset_method_removes_file(temp_config_dir):
+    manager = FeedbackManager()
+    # Create a fake state file
+    manager._save_state(manager._get_default_state())
+    assert manager.config_file.exists()
+
+    # Reset should remove it
+    manager.reset()
+    assert not manager.config_file.exists()
+
+
+def test_reset_feedback_command(temp_config_dir):
+    runner = CliRunner()
+    manager = FeedbackManager()
+    manager._save_state(manager._get_default_state())
+    assert manager.config_file.exists()
+
+    # Run CLI command
+    result = runner.invoke(reset_feedback)
+    assert result.exit_code == 0
+    assert "✓ Feedback state reset" in result.output
+
+    # File should be gone
+    assert not manager.config_file.exists()
