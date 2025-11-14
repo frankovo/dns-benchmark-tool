@@ -1,5 +1,16 @@
 # DNS Benchmark Tool
 
+<div align="center">
+
+## 🎉 999+ Downloads in 5 Days! 🎉
+
+🙏 Thank you to our amazing community!
+📢 Help shape the roadmap: [**Take 2-min survey →**](https://forms.gle/BJBiyBFvRJHskyR57)
+
+</div>
+
+---
+
 [![CI Tests](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml)
 [![Publish to TestPyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml)
 [![Publish to PyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml)
@@ -22,6 +33,7 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
 ## Table of Contents
 
 - [DNS Benchmark Tool](#dns-benchmark-tool)
+  - [🎉 999+ Downloads in 5 Days! 🎉](#-999-downloads-in-5-days-)
   - [Table of Contents](#table-of-contents)
   - [Quick start](#quick-start)
     - [Installation](#installation)

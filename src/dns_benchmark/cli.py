@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import click
 import pyfiglet
@@ -49,6 +49,218 @@ def create_progress_bar(total: int, desc: str) -> Any:
     return tqdm(
         total=total, desc=info(desc), bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}"
     )
+
+
+class FeedbackManager:
+    """Manages feedback prompt display logic with persistence."""
+
+    def __init__(self) -> None:
+        self.config_dir = Path.home() / ".dns-benchmark"
+        self.config_file = self.config_dir / "feedback.json"
+        self.config_dir.mkdir(exist_ok=True)
+
+    def _get_default_state(self) -> Dict[str, Any]:
+        """Get default state structure."""
+        return {
+            "total_runs": 0,
+            "feedback_given": False,
+            "dismissed_count": 0,
+            "last_shown": 0,
+            "last_threshold_shown": 0,
+            "version": "1.0",
+        }
+
+    def _load_state(self) -> Dict[str, Any]:
+        """Load feedback state from disk."""
+        if not self.config_file.exists():
+            return self._get_default_state()
+
+        try:
+            with open(self.config_file, "r") as f:
+                state = json.load(f)
+                # Ensure all required keys exist (for forward compatibility)
+                default_state = self._get_default_state()
+                for key, value in default_state.items():
+                    state.setdefault(key, value)
+                return cast(Dict[str, Any], state)
+        except (json.JSONDecodeError, IOError) as e:
+            # Log the error but continue with defaults
+            import logging
+
+            logging.warning(f"Failed to load feedback state: {e}")
+            return self._get_default_state()
+
+    def _save_state(self, state: Dict[str, Any]) -> None:
+        """Save feedback state to disk."""
+        try:
+            with open(self.config_file, "w") as f:
+                json.dump(state, f, indent=2)
+        except IOError as e:
+            # Log but fail silently for non-critical feature
+            import logging
+
+            logging.warning(f"Failed to save feedback state: {e}")
+
+    def increment_run(self) -> None:
+        """Increment the run counter without showing prompt."""
+        state = self._load_state()
+        state["total_runs"] = state.get("total_runs", 0) + 1
+        self._save_state(state)
+
+    def should_show_prompt(self) -> bool:
+        """Determine if feedback prompt should be shown.
+
+        Note: This method does NOT increment the run counter.
+        Call increment_run() separately when a benchmark starts.
+        """
+        state = self._load_state()
+
+        # Never show if already given feedback
+        if state.get("feedback_given", False):
+            return False
+
+        # Don't show if dismissed 3+ times
+        if state.get("dismissed_count", 0) >= 3:
+            return False
+
+        total_runs = state.get("total_runs", 0)
+        last_shown = state.get("last_shown", 0)
+        current_time = time.time()
+
+        # Show after 5, 15, 30 runs (progressive nudging)
+        thresholds = [5, 15, 30]
+
+        # Ensure at least 24 hours between prompts
+        hours_since_last = (current_time - last_shown) / 3600
+
+        # Check if we've just crossed a threshold
+        # (current run is at or past threshold, but previous check wasn't)
+        should_show = False
+        for threshold in thresholds:
+            if total_runs >= threshold:
+                # Check if this is the first time at this threshold
+                # by verifying we haven't shown since crossing it
+                last_threshold_shown = state.get("last_threshold_shown", 0)
+                if threshold > last_threshold_shown and hours_since_last >= 24:
+                    should_show = True
+                    state["last_threshold_shown"] = threshold
+                    break
+
+        # Update last_shown timestamp if we're showing the prompt
+        if should_show:
+            state["last_shown"] = current_time
+            self._save_state(state)
+
+        return should_show
+
+    def mark_feedback_given(self) -> None:
+        """Mark that user has given feedback."""
+        try:
+            state = self._load_state()
+            state["feedback_given"] = True
+            self._save_state(state)
+        except Exception as e:
+            import logging
+
+            logging.warning(f"Failed to mark feedback as given: {e}")
+
+    def mark_dismissed(self) -> None:
+        """Mark that user dismissed the prompt."""
+        try:
+            state = self._load_state()
+            state["dismissed_count"] = state.get("dismissed_count", 0) + 1
+            self._save_state(state)
+        except Exception as e:
+            import logging
+
+            logging.warning(f"Failed to mark feedback as dismissed: {e}")
+
+    def reset(self) -> None:
+        """Reset feedback state (for testing or user request)."""
+        try:
+            if self.config_file.exists():
+                self.config_file.unlink()
+        except Exception as e:
+            import logging
+
+            logging.warning(f"Failed to reset feedback state: {e}")
+
+
+def show_feedback_prompt() -> None:
+    """Show feedback prompt with improved logic."""
+    manager = FeedbackManager()
+
+    if not manager.should_show_prompt():
+        return
+
+    click.echo("\n" + "─" * 60)
+    click.echo(click.style("📢 Quick feedback request", fg="cyan", bold=True))
+    click.echo(
+        click.style(
+            "Help shape dns-benchmark! Share your biggest DNS challenge.", fg="cyan"
+        )
+    )
+    click.echo(
+        click.style("→ https://forms.gle/BJBiyBFvRJHskyR57 (2 min survey)", fg="cyan")
+    )
+    click.echo(click.style("→ Or run: dns-benchmark feedback", fg="cyan"))
+    click.echo("─" * 60)
+
+    # Give user option to dismiss
+    try:
+        response = click.prompt(
+            "\nShow this again? (y/n)",
+            type=click.Choice(["y", "n"], case_sensitive=False),
+            default="y",
+            show_default=True,
+        )
+
+        if response.lower() == "n":
+            manager.mark_dismissed()
+            click.echo(
+                click.style(
+                    "✓ Got it! We won't ask again. Thanks for using dns-benchmark!",
+                    fg="green",
+                )
+            )
+    except (KeyboardInterrupt, click.Abort):
+        # User skipped - don't mark as dismissed
+        click.echo()
+
+
+@cli.command()
+def feedback() -> None:
+    """Share feedback and mark as completed."""
+    import webbrowser
+
+    manager = FeedbackManager()
+    feedback_url = "https://forms.gle/BJBiyBFvRJHskyR57"
+
+    click.echo(click.style("📢 Help us make dns-benchmark better!", fg="cyan"))
+    click.echo(click.style("\n👉 Opening feedback form...", fg="green"))
+    click.echo(click.style(f"\nOr visit: {feedback_url}\n", fg="yellow"))
+
+    try:
+        webbrowser.open(feedback_url)
+        click.echo(click.style("Form opened! Thank you! 🙏", fg="green"))
+
+        # Mark as given after opening
+        manager.mark_feedback_given()
+
+    except Exception:
+        click.echo(click.style(f"Please visit: {feedback_url}", fg="red"))
+
+
+# Hidden command for testing/resetting
+@cli.command(hidden=True)
+def reset_feedback() -> None:
+    """Reset feedback prompt state (for testing)."""
+    manager = FeedbackManager()
+    manager.reset()
+    click.echo(click.style("✓ Feedback state reset", fg="green"))
+
+
+# ============= End Survey
 
 
 @cli.command()
@@ -109,6 +321,9 @@ def benchmark(
     use_cache: bool,
 ) -> None:
     """Run DNS benchmark test."""
+
+    feedback_manager = FeedbackManager()
+    benchmark_started = False
 
     # Validate inputs
     if not use_defaults and (not resolvers or not domains):
@@ -199,6 +414,11 @@ def benchmark(
     # Run benchmark
     if not quiet:
         click.echo(warning("Starting DNS benchmark..."))
+
+    # Mark that benchmark is actually starting and increment run counter
+    benchmark_started = True
+    feedback_manager.increment_run()
+
     start_time = time.time()
 
     try:
@@ -356,6 +576,7 @@ def benchmark(
             if not quiet:
                 click.echo(success("All exports completed successfully!"))
                 click.echo(info(f"Results saved to: {output_path}"))
+                show_feedback_prompt()
 
         finally:
             if export_progress:
@@ -363,10 +584,21 @@ def benchmark(
 
     except KeyboardInterrupt:
         click.echo(warning("\nBenchmark interrupted by user"))
+        # Still show feedback prompt since benchmark was started
+        if benchmark_started and not quiet:
+            show_feedback_prompt()
         return
     except Exception as e:
         click.echo(error(f"Error during benchmark: {e}"))
+        # Still show feedback prompt since benchmark was attempted
+        if benchmark_started and not quiet:
+            show_feedback_prompt()
         raise
+
+    # Show feedback prompt after successful completion
+    # This runs only if no exceptions occurred
+    if benchmark_started and not quiet:
+        show_feedback_prompt()
 
 
 @cli.command()

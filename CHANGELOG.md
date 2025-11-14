@@ -1,3 +1,9 @@
+## v0.2.7 (2025-11-14)
+
+### Feat
+
+- **cli**: implement smart feedback prompt with persistence
+
 ## v0.2.6 (2025-11-13)
 
 ### Feat
