@@ -1,3 +1,13 @@
+## v0.2.9 (2025-11-17)
+
+### Feat
+
+- **cli,-analysis,-exporters**: add optional chart generation for Excel and PDF exports
+
+### Fix
+
+- **pyproject.toml**: adjust pillow version range to available releases
+
 ## v0.2.8 (2025-11-14)
 
 ## v0.2.7 (2025-11-14)
