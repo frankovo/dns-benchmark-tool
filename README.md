@@ -1,11 +1,19 @@
-# DNS Benchmark Tool
-
 <div align="center">
 
-## 🎉 1000+ Downloads in 5 Days! 🎉
+# DNS Benchmark Tool
 
-🙏 Thank you to our amazing community!
-📢 Help shape the roadmap: [**Take 2-min survey →**](https://forms.gle/BJBiyBFvRJHskyR57)
+## Part of [BuildTools](https://buildtools.net) - Network Performance Suite
+
+**Fast, comprehensive DNS performance testing with DNSSEC validation, DoH/DoT support, and enterprise features**
+
+```bash
+pip install dns-benchmark-tool
+dns-benchmark benchmark --use-defaults
+```
+
+---
+> 🎉 **1,400+ downloads this week!** Thank you to our growing community.  
+> 📢 **Want multi-region testing?** [Join the waitlist →](https://buildtools.net)
 
 </div>
 
@@ -27,31 +35,54 @@
 [![Last commit](https://img.shields.io/github/last-commit/frankovo/dns-benchmark-tool.svg)](https://github.com/frankovo/dns-benchmark-tool/commits/main)
 [![Main branch protected](https://img.shields.io/badge/branch%20protection-main%20✅-brightgreen)](https://github.com/frankovo/dns-benchmark-tool/blob/main/RELEASE.md)
 
-A powerful open-source CLI tool to benchmark DNS resolvers across domains and record types.  
-Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automation in CI/CD.
-
 ## Table of Contents
 
 - [DNS Benchmark Tool](#dns-benchmark-tool)
-  - [🎉 1000+ Downloads in 5 Days! 🎉](#-1000-downloads-in-5-days-)
+  - [Part of BuildTools - Network Performance Suite](#part-of-buildtools---network-performance-suite)
   - [Table of Contents](#table-of-contents)
+  - [🎯 Why This Tool?](#-why-this-tool)
+    - [The Problem](#the-problem)
+    - [The Solution](#the-solution)
+    - [Perfect For](#perfect-for)
   - [Quick start](#quick-start)
     - [Installation](#installation)
-    - [Basic usage](#basic-usage)
-  - [🛠 Development \& Makefile Commands](#-development--makefile-commands)
-    - [Common usage](#common-usage)
+    - [Run Your First Benchmark](#run-your-first-benchmark)
+    - [View Results](#view-results)
+  - [✨ Key Features](#-key-features)
+    - [🚀 Performance](#-performance)
+    - [🔒 Security \& Privacy](#-security--privacy)
+    - [📊 Analysis \& Export](#-analysis--export)
+    - [🏢 Enterprise Features](#-enterprise-features)
+    - [🌐 Cross-Platform](#-cross-platform)
+  - [🔧 Advanced Capabilities](#-advanced-capabilities)
+  - [💼 Use Cases](#-use-cases)
+    - [🔧 For Developers: Optimize API Performance](#-for-developers-optimize-api-performance)
+    - [🛡️ For DevOps/SRE: Validate Before Migration](#️-for-devopssre-validate-before-migration)
+    - [🏠 For Self-Hosters: Prove Pi-hole Performance](#-for-self-hosters-prove-pi-hole-performance)
+    - [📊 For Network Admins: Automated Health Checks](#-for-network-admins-automated-health-checks)
+    - [🔐 For Privacy Advocates: Test Encrypted DNS](#-for-privacy-advocates-test-encrypted-dns)
+  - [📦 Installation \& Setup](#-installation--setup)
+    - [Requirements](#requirements)
+    - [Install from PyPI](#install-from-pypi)
+    - [Install from Source](#install-from-source)
+    - [Verify Installation](#verify-installation)
+    - [First Run](#first-run)
+  - [📖 Usage Examples](#-usage-examples)
+    - [Basic Usage](#basic-usage)
+    - [Advanced Usage](#advanced-usage)
+  - [🔧 Utilities](#-utilities)
+    - [Risolver management](#risolver-management)
+    - [Feedback](#feedback)
+    - [Domain management](#domain-management)
+      - [Category overview](#category-overview)
+    - [Configuration management](#configuration-management)
   - [Complete usage guide](#complete-usage-guide)
-    - [1) Benchmark commands](#1-benchmark-commands)
-      - [Quick performance test](#quick-performance-test)
+    - [Quick performance test](#quick-performance-test)
       - [Network administrator](#network-administrator)
       - [ISP \& network operator](#isp--network-operator)
       - [Developer \& DevOps](#developer--devops)
       - [Security auditor](#security-auditor)
       - [Enterprise IT](#enterprise-it)
-    - [2) Information \& discovery](#2-information--discovery)
-      - [Domain management](#domain-management)
-      - [Category overview](#category-overview)
-    - [3) Configuration management](#3-configuration-management)
   - [🔍 README Adjustments for Final Patch](#-readme-adjustments-for-final-patch)
     - [New CLI Options](#new-cli-options)
     - [📊 Analysis Enhancements](#-analysis-enhancements)
@@ -61,7 +92,7 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
     - [Smart Feedback Prompts](#smart-feedback-prompts)
     - [Privacy \& Data Storage](#privacy--data-storage)
     - [Opting Out](#opting-out)
-  - [Data files structure](#data-files-structure)
+  - [⚙️ Configuration Files](#️-configuration-files)
     - [Resolvers JSON format](#resolvers-json-format)
     - [Domains text file format](#domains-text-file-format)
   - [Output formats](#output-formats)
@@ -69,143 +100,567 @@ Generates detailed analytics, exports to CSV/Excel/PDF/JSON, and supports automa
     - [Excel report](#excel-report)
     - [PDF report](#pdf-report)
     - [JSON export](#json-export)
+    - [Generate Sample Config](#generate-sample-config)
   - [Performance optimization](#performance-optimization)
   - [Troubleshooting](#troubleshooting)
     - [Debug mode](#debug-mode)
   - [Automation \& CI](#automation--ci)
     - [Cron jobs](#cron-jobs)
     - [GitHub Actions example](#github-actions-example)
-  - [Use case examples](#use-case-examples)
   - [Screenshots](#screenshots)
     - [1. CLI Benchmark Run](#1-cli-benchmark-run)
     - [2. Excel Report Output](#2-excel-report-output)
     - [3. PDF Executive Summary](#3-pdf-executive-summary)
+    - [4. PDF Charts](#4-pdf-charts)
+    - [5. Excel Charts](#5-excel-charts)
   - [Getting help](#getting-help)
   - [Release workflow](#release-workflow)
-  - [License](#license)
+  - [🌐 Hosted Version (Coming Soon)](#-hosted-version-coming-soon)
+    - [🌍 Multi-Region Testing](#-multi-region-testing)
+    - [📊 Historical Tracking](#-historical-tracking)
+    - [🚨 Smart Alerts](#-smart-alerts)
+    - [👥 Team Collaboration](#-team-collaboration)
+    - [📈 SLA Compliance](#-sla-compliance)
+    - [🔌 API Access](#-api-access)
   - [🛣️ Roadmap](#️-roadmap)
     - [✅ Current Release (CLI Edition)](#-current-release-cli-edition)
-    - [🚧 Upcoming Features](#-upcoming-features)
-    - [🔜 Future Enhancements](#-future-enhancements)
+    - [🚧 Hosted Version (Q1 2026)](#-hosted-version-q1-2026)
+    - [🔜 More Network Tools (Q1-Q2 2026)](#-more-network-tools-q1-q2-2026)
+    - [💡 Your Input Matters](#-your-input-matters)
+  - [🤝 Contributing](#-contributing)
+    - [Ways to Contribute](#ways-to-contribute)
+    - [🛠 Development \& Makefile Commands](#-development--makefile-commands)
+    - [Common usage](#common-usage)
+    - [Code Guidelines](#code-guidelines)
+  - [❓ FAQ](#-faq)
+  - [🔗 Links \& Support](#-links--support)
+    - [Official](#official)
+    - [Community](#community)
+    - [Stats](#stats)
+  - [License](#license)
+
+---
+
+## 🎯 Why This Tool?
+
+DNS resolution is often the hidden bottleneck in network performance. A slow resolver can add hundreds of milliseconds to every request.
+
+### The Problem
+
+- ⏱️ **Hidden Bottleneck**: DNS can add 300ms+ to every request
+- 🤷 **Unknown Performance**: Most developers never test their DNS
+- 🌍 **Location Matters**: "Fastest" resolver depends on where YOU are
+- 🔒 **Security Varies**: DNSSEC, DoH, DoT support differs wildly
+
+### The Solution
+
+dns-benchmark-tool helps you:
+
+- 🔍 **Find the fastest** DNS resolver for YOUR location
+- 📊 **Get real data** - P95, P99, jitter, consistency scores
+- 🛡️ **Validate security** - DNSSEC verification built-in
+- 🚀 **Test at scale** - 100+ concurrent queries in seconds
+
+### Perfect For
+
+- ✅ **Developers** optimizing API performance
+- ✅ **DevOps/SRE** validating resolver SLAs
+- ✅ **Self-hosters** comparing Pi-hole/Unbound vs public DNS
+- ✅ **Network admins** running compliance checks
+
+---
 
 ## Quick start
 
 ### Installation
 
 ```bash
-# Install from source
-git clone <repository-url>
-cd dns-benchmark-tool
-pip install -e .
-
-# Or install dependencies directly
-pip install dnspython pandas openpyxl weasyprint click colorama tqdm matplotlib Jinja2
+pip install dns-benchmark-tool
 ```
 
-### Basic usage
+### Run Your First Benchmark
 
 ```bash
-# Quick test with defaults
+# Test default resolvers against popular domains
 dns-benchmark benchmark --use-defaults
+```
+
+### View Results
+
+Results are automatically saved to `./benchmark_results/` with:
+
+- Summary CSV with statistics
+- Detailed raw data
+- Optional PDF/Excel reports
+
+**That's it!** You just benchmarked 5 DNS resolvers against 10 domains.
+
+---
+
+## ✨ Key Features
+
+### 🚀 Performance
+
+- **Async queries** - Test 100+ resolvers simultaneously
+- **Multi-iteration** - Run benchmarks multiple times for accuracy
+- **Statistical analysis** - Mean, median, P95, P99, jitter, consistency
+- **Cache control** - Test with/without DNS caching
+
+### 🔒 Security & Privacy
+
+- **DNSSEC validation** - Verify cryptographic trust chains
+- **DNS-over-HTTPS (DoH)** - Encrypted DNS benchmarking
+- **DNS-over-TLS (DoT)** - Secure transport testing
+- **DNS-over-QUIC (DoQ)** - Experimental QUIC support
+
+### 📊 Analysis & Export
+
+- **Multiple formats** - CSV, Excel, PDF, JSON
+- **Visual reports** - Charts and graphs
+- **Domain statistics** - Per-domain performance analysis
+- **Error breakdown** - Identify problematic resolvers
+
+### 🏢 Enterprise Features
+
+- **TSIG authentication** - Secure enterprise queries
+- **Zone transfers** - AXFR/IXFR validation
+- **Dynamic updates** - Test DNS write operations
+- **Compliance reports** - Audit-ready documentation
+
+### 🌐 Cross-Platform
+
+- **Linux, macOS, Windows** - Works everywhere
+- **CI/CD friendly** - JSON output, exit codes
+- **IDNA support** - Internationalized domain names
+- **Auto-detection** - Windows WMI DNS discovery
+
+---
+
+## 🔧 Advanced Capabilities
+
+---
+> ⚠️ These flags are **documented for visibility** but not yet implemented.  
+> They represent upcoming advanced features.
+
+- `--doh` → DNS-over-HTTPS benchmarking *(coming soon)*
+- `--dot` → DNS-over-TLS benchmarking *(coming soon)*
+- `--doq` → DNS-over-QUIC benchmarking *(coming soon)*
+- `--dnssec-validate` → DNSSEC trust chain validation *(coming soon)*
+- `--zone-transfer` → AXFR/IXFR zone transfer testing *(coming soon)*
+- `--tsig` → TSIG-authenticated queries *(coming soon)*
+- `--idna` → Internationalized domain name support *(coming soon)*
+
+---
+
+<details>
+<summary><b>🚀 Performance & Concurrency Features</b></summary>
+
+<br>
+
+- **Async I/O with dnspython** - Test 100+ resolvers simultaneously
+- **Trio framework support** - High-concurrency async operations
+- **Configurable concurrency** - Control max concurrent queries
+- **Retry logic** - Exponential backoff for failed queries
+- **Cache simulation** - Test with/without DNS caching
+- **Multi-iteration benchmarks** - Run tests multiple times for accuracy
+- **Warmup phase** - Pre-warm DNS caches before testing
+- **Statistical analysis** - Mean, median, P95, P99, jitter, consistency scores
+
+**Example:**
+
+```bash
+dns-benchmark benchmark \
+  --max-concurrent 200 \
+  --iterations 5 \
+  --timeout 3.0 \
+  --warmup
+```
+
+</details>
+
+<details>
+<summary><b>🔒 Security & Privacy Features</b></summary>
+
+<br>
+
+- **DNSSEC validation** - Verify cryptographic trust chains
+- **DNS-over-HTTPS (DoH)** - Encrypted DNS benchmarking via HTTPS
+- **DNS-over-TLS (DoT)** - Secure transport layer testing
+- **DNS-over-QUIC (DoQ)** - Experimental QUIC protocol support
+- **TSIG authentication** - Transaction signatures for enterprise DNS
+- **EDNS0 support** - Extended DNS features and larger payloads
+
+**Example:**
+
+```bash
+# Test DoH resolvers
+dns-benchmark benchmark \
+  --doh \
+  --resolvers doh-providers.json \
+  --dnssec-validate
+```
+
+</details>
+
+<details>
+<summary><b>🏢 Enterprise & Migration Features</b></summary>
+
+<br>
+
+- **Zone transfers (AXFR/IXFR)** - Full and incremental zone transfer validation
+- **Dynamic DNS updates** - Test DNS write operations and updates
+- **EDNS0 support** - Extended DNS options, client subnet, larger payloads
+- **Windows WMI integration** - Auto-detect active system DNS settings
+- **Compliance reporting** - Generate audit-ready PDF/Excel reports
+- **SLA validation** - Track uptime and performance thresholds
+
+**Example:**
+
+```bash
+# Validate DNS migration
+dns-benchmark benchmark \
+  --resolvers old-provider.json,new-provider.json \
+  --zone-transfer \ # coming soon
+  --output migration-report/ \
+  --formats pdf,excel
+```
+
+</details>
+
+<details>
+<summary><b>📊 Analysis & Reporting Features</b></summary>
+
+<br>
+
+- **Per-domain statistics** - Analyze performance by domain
+- **Per-record-type stats** - Compare A, AAAA, MX, TXT, etc.
+- **Error breakdown** - Categorize and count error types
+- **Comparison matrices** - Side-by-side resolver comparisons
+- **Trend analysis** - Performance over time (with multiple runs)
+- **Best-by-criteria** - Find best resolver by latency/reliability/consistency
+
+**Example:**
+
+```bash
+# Detailed analysis
+dns-benchmark benchmark \
+  --use-defaults \
+  --domain-stats \
+  --record-type-stats \
+  --error-breakdown \
+  --formats csv,excel,pdf
+```
+
+</details>
+
+<details>
+<summary><b>🌐 Internationalization & Compatibility</b></summary>
+
+<br>
+
+- **IDNA support** - Internationalized domain names (IDN)
+- **Multiple record types** - A, AAAA, MX, TXT, CNAME, NS, SOA, PTR, SRV, CAA
+- **Cross-platform** - Linux, macOS, Windows (native support)
+- **CI/CD integration** - JSON output, proper exit codes, quiet mode
+- **Custom resolvers** - Load from JSON, test your own DNS servers
+- **Custom domains** - Test against your specific domain list
+
+**Example:**
+
+```bash
+# Test internationalized domains
+dns-benchmark benchmark \
+  --domains international-domains.txt \
+  --record-types A,AAAA,MX \
+  --resolvers custom-resolvers.json
+```
+
+</details>
+
+> 💡 **Most users only need basic features.** These advanced capabilities are available when you need them.
+
+---
+
+## 💼 Use Cases
+
+### 🔧 For Developers: Optimize API Performance
+
+```bash
+# Find fastest DNS for your API endpoints
+dns-benchmark benchmark \
+  --domains api.myapp.com,cdn.myapp.com \
+  --record-types A,AAAA \
+  --resolvers production.json \
+  --iterations 10
+```
+
+**Result:** Reduce API latency by 100-300ms
+
+---
+
+### 🛡️ For DevOps/SRE: Validate Before Migration
+
+```bash
+# Test new DNS provider before switching
+dns-benchmark benchmark \
+  --resolvers current-dns.json,new-dns.json \
+  --use-defaults \
+  --dnssec-validate \ # coming soon
+  --output migration-report/ \
+  --formats pdf,excel
+```
+
+**Result:** Verify performance and security before migration
+
+---
+
+### 🏠 For Self-Hosters: Prove Pi-hole Performance
+
+```bash
+# Compare Pi-hole against public resolvers (coming soon)
+dns-benchmark compare \
+  --resolvers pihole.local,1.1.1.1,8.8.8.8,9.9.9.9 \
+  --domains common-sites.txt \
+  --rounds 10
+```
+
+**Result:** Data-driven proof your self-hosted DNS is faster (or not!)
+
+---
+
+### 📊 For Network Admins: Automated Health Checks
+
+```bash
+# Add to crontab for monthly reports
+0 0 1 * * dns-benchmark benchmark \
+  --use-defaults \
+  --output /var/reports/dns/ \
+  --formats pdf,csv \
+  --domain-stats \
+  --error-breakdown
+```
+
+**Result:** Automated compliance and SLA reporting
+
+---
+
+### 🔐 For Privacy Advocates: Test Encrypted DNS
+
+```bash
+# Benchmark privacy-focused DoH/DoT resolvers
+dns-benchmark benchmark \
+  --doh \ # coming soon
+  --resolvers privacy-resolvers.json \
+  --domains sensitive-sites.txt \
+  --dnssec-validate
+```
+
+**Result:** Find fastest encrypted DNS without sacrificing privacy
+
+---
+
+## 📦 Installation & Setup
+
+### Requirements
+
+- Python 3.9+
+- pip package manager
+
+### Install from PyPI
+
+```bash
+pip install dns-benchmark-tool
+```
+
+### Install from Source
+
+```bash
+git clone https://github.com/frankovo/dns-benchmark-tool.git
+cd dns-benchmark-tool
+pip install -e .
+```
+
+### Verify Installation
+
+```bash
+dns-benchmark --version
+dns-benchmark --help
+```
+
+### First Run
+
+```bash
+# Test with defaults (recommended for first time)
+dns-benchmark benchmark --use-defaults
+```
+
+---
+
+## 📖 Usage Examples
+
+### Basic Usage
+
+```bash
+# Basic test with progress bars
+dns-benchmark benchmark --use-defaults
+
+# Basic test without progress bars
+dns-benchmark benchmark --use-defaults --quiet
 
 # Test with custom resolvers and domains
 dns-benchmark benchmark --resolvers data/resolvers.json --domains data/domains.txt
 
-# Generate comprehensive report with analytics
-dns-benchmark benchmark --use-defaults --formats csv,excel,pdf \
-  --domain-stats --record-type-stats --error-breakdown --json \
-  --output ./results
+# Quick test with only CSV output
+dns-benchmark benchmark --use-defaults --formats csv
 ```
 
----
+### Advanced Usage
 
-## 🛠 Development & Makefile Commands
+```bash
+# Export a machine-readable bundle
+dns-benchmark benchmark --use-defaults --json --output ./results
 
-This project includes a `Makefile` to simplify installation, testing, and code quality checks.
+# Test specific record types
+dns-benchmark benchmark --use-defaults --record-types A,AAAA,MX
 
-```makefile
-.PHONY: install install-dev uninstall mypy black isort flake8 cov test clean cli-test
+# Custom output location and formats
+dns-benchmark benchmark \
+  --use-defaults \
+  --output ./my-results \
+  --formats csv,excel,pdf,json
 
-# 🔧 Install package (runtime only)
-install:
-  pip install .
+# Include detailed statistics
+dns-benchmark benchmark \
+  --use-defaults \
+  --record-type-stats \
+  --error-breakdown
 
-# 🔧 Install package with dev extras (pytest, mypy, flake8, black, isort, etc.)
-install-dev:
-  pip install .[dev]
+# High concurrency with retries
+dns-benchmark benchmark \
+  --use-defaults \
+  --max-concurrent 200 \
+  --timeout 3.0 \
+  --retries 3
 
-# 🔧 Uninstall package
-uninstall:
-  pip uninstall -y dns-benchmark-tool \
-  dnspython pandas aiohttp click pyfiglet colorama Jinja2 weasyprint openpyxl pyyaml tqdm matplotlib \
-  mypy black flake8 autopep8 pytest coverage isort
+# Website migration planning
+dns-benchmark benchmark \
+  --resolvers data/global_resolvers.json \
+  --domains data/migration_domains.txt \
+  --formats excel,pdf \
+  --output ./migration_analysis
 
-mypy:
-  mypy .
+# DNS provider selection
+dns-benchmark benchmark \
+  --resolvers data/provider_candidates.json \
+  --domains data/business_domains.txt \
+  --formats csv,excel \
+  --output ./provider_selection
 
-isort:
-  isort .
+# Network troubleshooting
+dns-benchmark benchmark \
+  --resolvers "192.168.1.1,1.1.1.1,8.8.8.8" \
+  --domains "problematic-domain.com,working-domain.com" \
+  --timeout 10 \
+  --retries 3 \
+  --formats csv \
+  --output ./troubleshooting
 
-black:
-  black .
+# Security assessment
+dns-benchmark benchmark \
+  --resolvers data/security_resolvers.json \
+  --domains data/security_test_domains.txt \
+  --formats pdf \
+  --output ./security_assessment
 
-flake8:
-  flake8 src tests --ignore=E126,E501,E712,F405,F403,E266,W503 --max-line-length=88 --extend-ignore=E203
-
-cov:
-  coverage erase
-  coverage run --source=src -m pytest -vv -s
-  coverage html
-
-test: mypy black isort flake8 cov
-
-clean:
-  rm -rf __pycache__ .pytest_cache htmlcov .coverage coverage.xml \
-  build dist *.egg-info .eggs benchmark_results
-cli-test:
-  # Run only the CLI smoke tests marked with @pytest.mark.cli
-  pytest -vv -s -m cli tests/test_cli_commands.py
+# Performance monitoring
+dns-benchmark benchmark \
+  --use-defaults \
+  --formats csv \
+  --quiet \
+  --output /var/log/dns_benchmark/$(date +%Y%m%d_%H%M%S)
 ```
 
-### Common usage
+## 🔧 Utilities
 
-- **Install runtime only**
-  
-  ```bash
-  make install
-  ```
+### Risolver management
 
-- **Install with dev dependencies**
+### Feedback
 
-  ```bash
-  make install-dev
-  ```
+```bash
+# Provide feedback
+dns-benchmark feedback
+```
 
-- **Run type checks, linting, formatting, and tests**
-  
-  ```bash
-  make test
-  ```
+```bash
+# Provide feedback
+dns-benchmark feedback
 
-- **Run CLI smoke tests only**  
+# Show default resolvers and domains
+dns-benchmark list-defaults
 
-  ```bash
-  make cli-test
-  ```
+# Browse all available resolvers
+dns-benchmark list-resolvers
 
-- **Clean build/test artifacts**  
+# Browse with detailed information
+dns-benchmark list-resolvers --details
 
-  ```bash
-  make clean
-  ```
-  
+# Filter by category
+dns-benchmark list-resolvers --category security
+dns-benchmark list-resolvers --category privacy
+dns-benchmark list-resolvers --category family
+
+# Export resolvers to different formats
+dns-benchmark list-resolvers --format csv
+dns-benchmark list-resolvers --format json
+```
+
+### Domain management
+
+```bash
+# List all test domains
+dns-benchmark list-domains
+
+# Show domains by category
+dns-benchmark list-domains --category tech
+dns-benchmark list-domains --category ecommerce
+dns-benchmark list-domains --category social
+
+# Limit results
+dns-benchmark list-domains --count 10
+dns-benchmark list-domains --category news --count 5
+
+# Export domain list
+dns-benchmark list-domains --format csv
+dns-benchmark list-domains --format json
+```
+
+#### Category overview
+
+```bash
+# View all available categories
+dns-benchmark list-categories
+```
+
+### Configuration management
+
+```bash
+# Generate sample configuration
+dns-benchmark generate-config --output sample_config.yaml
+
+# Category-specific configurations
+dns-benchmark generate-config --category security --output security_test.yaml
+dns-benchmark generate-config --category family --output family_protection.yaml
+dns-benchmark generate-config --category performance --output performance_test.yaml
+
+# Custom configuration for specific use case
+dns-benchmark generate-config --category privacy --output privacy_audit.yaml
+```
+
 ---
 
 ## Complete usage guide
 
-### 1) Benchmark commands
-
-#### Quick performance test
+### Quick performance test
 
 ```bash
 # Basic test with progress bars
@@ -336,72 +791,6 @@ dns-benchmark benchmark \
   --output ./global_performance
 ```
 
-### 2) Information & discovery
-
-```bash
-# Show default resolvers and domains
-dns-benchmark list-defaults
-
-# Browse all available resolvers
-dns-benchmark list-resolvers
-
-# Browse with detailed information
-dns-benchmark list-resolvers --details
-
-# Filter by category
-dns-benchmark list-resolvers --category security
-dns-benchmark list-resolvers --category privacy
-dns-benchmark list-resolvers --category family
-
-# Export resolvers to different formats
-dns-benchmark list-resolvers --format csv
-dns-benchmark list-resolvers --format json
-```
-
-#### Domain management
-
-```bash
-# List all test domains
-dns-benchmark list-domains
-
-# Show domains by category
-dns-benchmark list-domains --category tech
-dns-benchmark list-domains --category ecommerce
-dns-benchmark list-domains --category social
-
-# Limit results
-dns-benchmark list-domains --count 10
-dns-benchmark list-domains --category news --count 5
-
-# Export domain list
-dns-benchmark list-domains --format csv
-dns-benchmark list-domains --format json
-```
-
-#### Category overview
-
-```bash
-# View all available categories
-dns-benchmark list-categories
-```
-
-### 3) Configuration management
-
-```bash
-# Generate sample configuration
-dns-benchmark generate-config --output sample_config.yaml
-
-# Category-specific configurations
-dns-benchmark generate-config --category security --output security_test.yaml
-dns-benchmark generate-config --category family --output family_protection.yaml
-dns-benchmark generate-config --category performance --output performance_test.yaml
-
-# Custom configuration for specific use case
-dns-benchmark generate-config --category privacy --output privacy_audit.yaml
-```
-
----
-
 ## 🔍 README Adjustments for Final Patch
 
 ### New CLI Options
@@ -412,6 +801,7 @@ dns-benchmark generate-config --category privacy --output privacy_audit.yaml
 | `--use-cache`      | Allow cached results to be reused across iterations                         | `dns-benchmark benchmark --use-defaults -i 3 --use-cache`               |
 | `--warmup`         | Run a **full warmup** (all resolvers × domains × record types)              | `dns-benchmark benchmark --use-defaults --warmup`                       |
 | `--warmup-fast`    | Run a **lightweight warmup** (one probe per resolver)                       | `dns-benchmark benchmark --use-defaults --warmup-fast`                  |
+| `--include-charts` | Embed charts and graphs in PDF/Excel reports for visual performance analysis | `dns-benchmark benchmark --use-defaults --formats pdf,excel --include-charts` |
 
 ---
 
@@ -570,7 +960,7 @@ dns-benchmark reset-feedback  # Hidden command
 
 ---
 
-## Data files structure
+## ⚙️ Configuration Files
 
 ### Resolvers JSON format
 
@@ -646,6 +1036,14 @@ aws.amazon.com
   - Domain statistics
   - Record type statistics
   - Error breakdown
+
+### Generate Sample Config
+
+```bash
+dns-benchmark generate-config \
+  --category privacy \
+  --output my-config.yaml
+```
 
 ---
 
@@ -737,49 +1135,6 @@ dns-benchmark benchmark --resolvers "1.1.1.1" --domains "google.com" --formats c
 
 ---
 
-## Use case examples
-
-```bash
-# Website migration planning
-dns-benchmark benchmark \
-  --resolvers data/global_resolvers.json \
-  --domains data/migration_domains.txt \
-  --formats excel,pdf \
-  --output ./migration_analysis
-
-# DNS provider selection
-dns-benchmark benchmark \
-  --resolvers data/provider_candidates.json \
-  --domains data/business_domains.txt \
-  --formats csv,excel \
-  --output ./provider_selection
-
-# Network troubleshooting
-dns-benchmark benchmark \
-  --resolvers "192.168.1.1,1.1.1.1,8.8.8.8" \
-  --domains "problematic-domain.com,working-domain.com" \
-  --timeout 10 \
-  --retries 3 \
-  --formats csv \
-  --output ./troubleshooting
-
-# Security assessment
-dns-benchmark benchmark \
-  --resolvers data/security_resolvers.json \
-  --domains data/security_test_domains.txt \
-  --formats pdf \
-  --output ./security_assessment
-
-# Performance monitoring
-dns-benchmark benchmark \
-  --use-defaults \
-  --formats csv \
-  --quiet \
-  --output /var/log/dns_benchmark/$(date +%Y%m%d_%H%M%S)
-```
-
----
-
 ## Screenshots
 
 Place images in `docs/screenshots/`:
@@ -799,6 +1154,14 @@ Place images in `docs/screenshots/`:
 ### 3. PDF Executive Summary
 
 [![PDF Executive Summary](docs/screenshots/pdf_summary.png)](https://github.com/frankovo/dns-benchmark-tool)
+
+### 4. PDF Charts
+
+[![PDF Charts](docs/screenshots/pdf_charts.png)](https://github.com/frankovo/dns-benchmark-tool)
+
+### 5. Excel Charts
+
+[![Excel Charts](docs/screenshots/excel_charts.png)](https://github.com/frankovo/dns-benchmark-tool)
 
 ---
 
@@ -885,9 +1248,37 @@ dns-benchmark benchmark --use-defaults --formats excel,pdf \
 
 ---
 
-## License
+## 🌐 Hosted Version (Coming Soon)
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+**CLI stays free forever.** The hosted version adds features impossible to achieve locally:
+
+### 🌍 Multi-Region Testing
+
+Test from US-East, US-West, EU, Asia simultaneously. See how your DNS performs for users worldwide.
+
+### 📊 Historical Tracking
+
+Monitor DNS performance over time. Identify trends, degradation, and optimize continuously.
+
+### 🚨 Smart Alerts
+
+Get notified via Email, Slack, PagerDuty when DNS performance degrades or SLA thresholds are breached.
+
+### 👥 Team Collaboration
+
+Share results, dashboards, and reports across your team. Role-based access control.
+
+### 📈 SLA Compliance
+
+Automated monthly reports proving DNS provider meets SLA guarantees. Audit-ready documentation.
+
+### 🔌 API Access
+
+Integrate DNS monitoring into your existing observability stack. Prometheus, Datadog, Grafana.
+
+---
+
+**[Join the Waitlist →](https://buildtools.net)** | Early access gets 50% off for 3 months
 
 ---
 
@@ -895,21 +1286,264 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ### ✅ Current Release (CLI Edition)
 
-- Benchmark DNS resolvers across domains and record types  
-- Export results to CSV, Excel, PDF, and JSON  
-- Generate detailed analytics (domain stats, record-type stats, error breakdown)  
-- Automation support (cron jobs, CI/CD)  
+- Benchmark DNS resolvers across domains and record types
+- Export to CSV, Excel, PDF, JSON
+- Statistical analysis (P95, P99, jitter, consistency)
+- Automation support (CI/CD, cron)
 
-### 🚧 Upcoming Features
+### 🚧 Hosted Version (Q1 2026)
 
-- Web UI (Django + HTMX + FastAPI) for interactive dashboards  
-- Real-time monitoring with WebSocket updates  
-- Public status pages for sharing resolver/domain performance  
-- Multi-channel notifications (email, Slack, etc.)  
-- Advanced scheduling and historical tracking  
+**CLI stays free forever.** Hosted adds:
 
-### 🔜 Future Enhancements
+- 🌍 Multi-region testing (US, EU, Asia, custom)
+- 📊 Historical tracking with charts and trends
+- 🚨 Alerts (Email, Slack, PagerDuty, webhooks)
+- 👥 Team collaboration and sharing
+- 📈 SLA compliance reporting
+- 🔌 API access and integrations
 
-- SaaS platform integration with Stripe-powered subscriptions  
-- Team collaboration features  
-- Enterprise-grade reporting and centralized management  
+**[Join Waitlist](https://buildtools.net)** for early access
+
+### 🔜 More Network Tools (Q1-Q2 2026)
+
+Part of BuildTools - Network Performance Suite:
+
+- 🔍 **HTTP/HTTPS Benchmark** - Test API endpoints and CDNs
+- 🔒 **SSL Certificate Monitor** - Never miss renewals
+- 📡 **Uptime Monitor** - 24/7 availability tracking
+- 🌐 **API Health Dashboard** - Complete network observability
+
+### 💡 Your Input Matters
+
+**Help shape our roadmap:**
+
+- [📝 2-minute feedback survey](https://forms.gle/BJBiyBFvRJHskyR57)
+- [💬 GitHub Discussions](https://github.com/frankovo/dns-benchmark-tool/discussions)
+- [⭐ Star us](https://github.com/frankovo/dns-benchmark-tool) if this helps you!
+
+---
+
+## 🤝 Contributing
+
+We love contributions! Here's how you can help:
+
+### Ways to Contribute
+
+- 🐛 **Report bugs** - [Open an issue](https://github.com/frankovo/dns-benchmark-tool/issues)
+- 💡 **Suggest features** - [Start a discussion](https://github.com/frankovo/dns-benchmark-tool/discussions)
+- 📝 **Improve docs** - README, examples, tutorials
+- 🔧 **Submit PRs** - Bug fixes, features, tests
+- ⭐ **Star the repo** - Help others discover the tool
+- 📢 **Spread the word** - Tweet, blog, share
+
+### 🛠 Development & Makefile Commands
+
+This project includes a `Makefile` to simplify installation, testing, and code quality checks.
+
+```makefile
+.PHONY: install install-dev uninstall mypy black isort flake8 cov test clean cli-test
+
+# 🔧 Install package (runtime only)
+install:
+  pip install .
+
+# 🔧 Install package with dev extras (pytest, mypy, flake8, black, isort, etc.)
+install-dev:
+  pip install .[dev]
+
+# 🔧 Uninstall package
+uninstall:
+  pip uninstall -y dns-benchmark-tool \
+  dnspython pandas aiohttp click pyfiglet colorama Jinja2 weasyprint openpyxl pyyaml tqdm matplotlib \
+  mypy black flake8 autopep8 pytest coverage isort
+
+mypy:
+  mypy .
+
+isort:
+  isort .
+
+black:
+  black .
+
+flake8:
+  flake8 src tests --ignore=E126,E501,E712,F405,F403,E266,W503 --max-line-length=88 --extend-ignore=E203
+
+cov:
+  coverage erase
+  coverage run --source=src -m pytest -vv -s
+  coverage html
+
+test: mypy black isort flake8 cov
+
+clean:
+  rm -rf __pycache__ .pytest_cache htmlcov .coverage coverage.xml \
+  build dist *.egg-info .eggs benchmark_results
+cli-test:
+  # Run only the CLI smoke tests marked with @pytest.mark.cli
+  pytest -vv -s -m cli tests/test_cli_commands.py
+```
+
+### Common usage
+
+- **Install runtime only**
+  
+  ```bash
+  make install
+  ```
+
+- **Install with dev dependencies**
+
+  ```bash
+  make install-dev
+  ```
+
+- **Run type checks, linting, formatting, and tests**
+  
+  ```bash
+  make test
+  ```
+
+- **Run CLI smoke tests only**  
+
+  ```bash
+  make cli-test
+  ```
+
+- **Clean build/test artifacts**  
+
+  ```bash
+  make clean
+  ```
+
+---
+
+### Code Guidelines
+
+- Follow PEP 8 style guide
+- Add tests for new features
+- Update documentation
+- Keep PRs focused and atomic
+
+---
+
+## ❓ FAQ
+
+<details>
+<summary><b>Why is my ISP's DNS not fastest?</b></summary>
+
+Local ISP DNS often has caching advantages but may lack:
+- Global anycast network (slower for distant domains)
+- DNSSEC validation
+- Privacy features (DoH/DoT)
+- Reliability guarantees
+
+Test both and decide based on YOUR priorities!
+
+</details>
+
+<details>
+<summary><b>How often should I benchmark DNS?</b></summary>
+
+- **One-time**: When choosing DNS provider
+- **Monthly**: For network health checks
+- **Before migration**: When switching providers
+- **After issues**: To troubleshoot performance
+
+</details>
+
+<details>
+<summary><b>Can I test my own DNS server?</b></summary>
+
+Yes! Just add it to a custom resolvers JSON file:
+
+```json
+{
+  "resolvers": [
+    {"name": "My DNS", "ip": "192.168.1.1"}
+  ]
+}
+```
+
+</details>
+
+<details>
+<summary><b>What's the difference between CLI and hosted version?</b></summary>
+
+**CLI (Free Forever):**
+- Run tests from YOUR location
+- Save results locally
+- Manual execution
+- Open source
+
+**Hosted (Coming Soon):**
+- Test from MULTIPLE regions
+- Historical tracking
+- Automated scheduling
+- Alerts and integrations
+
+</details>
+
+<details>
+<summary><b>Is this tool safe to use in production?</b></summary>
+
+Yes! The tool only performs DNS lookups (read operations). It does NOT:
+- Modify DNS records
+- Perform attacks
+- Send data to external servers (unless you enable hosted features)
+
+All tests are standard DNS queries that any resolver handles daily.
+
+</details>
+
+<details>
+<summary><b>Why do results vary between runs?</b></summary>
+
+DNS performance varies due to:
+- Network conditions
+- DNS caching (resolver and intermediate)
+- Server load
+- Geographic routing changes
+
+Run multiple iterations (`--iterations 5`) for more consistent results.
+
+</details>
+
+---
+
+## 🔗 Links & Support
+
+### Official
+
+- **Website**: [buildtools.net](https://buildtools.net)
+- **PyPI**: [dns-benchmark-tool](https://pypi.org/project/dns-benchmark-tool/)
+- **GitHub**: [frankovo/dns-benchmark-tool](https://github.com/frankovo/dns-benchmark-tool)
+
+### Community
+
+- **Feedback**: [2-minute survey](https://forms.gle/BJBiyBFvRJHskyR57)
+- **Discussions**: [GitHub Discussions](https://github.com/frankovo/dns-benchmark-tool/discussions)
+- **Issues**: [Bug Reports](https://github.com/frankovo/dns-benchmark-tool/issues)
+
+### Stats
+
+- **Downloads**: 1,400+ (this week)
+- **Active Users**: 600+
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+
+**Built with ❤️ by [@frankovo](https://github.com/frankovo)**
+
+Part of [BuildTools](https://buildtools.net) - Network Performance Suite
+
+[⭐ Star on GitHub](https://github.com/frankovo/dns-benchmark-tool) • [📦 Install from PyPI](https://pypi.org/project/dns-benchmark-tool/) • [🌐 Join Waitlist](https://buildtools.net)
+
+</div>

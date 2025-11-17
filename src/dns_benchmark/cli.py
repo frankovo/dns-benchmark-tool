@@ -40,9 +40,20 @@ def cli() -> None:
     """
     # Allow suppression of banner for CI/CD
     if not os.environ.get("NO_BANNER"):
-        ascii_art = pyfiglet.figlet_format("DNS Benchmarking Tool")
+        ascii_art = pyfiglet.figlet_format("DNS Benchmark")
         print(Fore.GREEN + ascii_art + Style.RESET_ALL)
-        print(Fore.CYAN + "[ GitHub : https://github.com/frankovo ]" + Style.RESET_ALL)
+        print(
+            Fore.CYAN
+            + "Part of BuildTools - Developer Tools That Work"
+            + Style.RESET_ALL
+        )
+        print(Fore.YELLOW + "🌐 buildtools.net | 📦 1,400+ downloads" + Style.RESET_ALL)
+        print(
+            Fore.BLUE
+            + "💡 Want multi-region testing? Join waitlist: buildtools.net"
+            + Style.RESET_ALL
+        )
+        print()
 
 
 def create_progress_bar(total: int, desc: str) -> Any:
