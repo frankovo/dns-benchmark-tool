@@ -15,30 +15,50 @@ dns-benchmark benchmark --use-defaults
 > 🎉 **1,400+ downloads this week!** Thank you to our growing community.  
 > 📢 **Want multi-region testing?** [Join the waitlist →](https://buildtools.net)
 
+## 🎉 Today’s Release Highlights ![new](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen&label=new)
+
+We’ve added **three powerful CLI commands** to make DNS benchmarking even more versatile:
+
+- 🚀 **top** — quick ranking of resolvers by speed and reliability  
+- 📊 **compare** — side‑by‑side benchmarking with detailed statistics and export options  
+- 🔄 **monitoring** — continuous performance tracking with alerts and logging  
+
+```bash
+# Quick resolver ranking
+dns-benchmark top --use-defaults
+
+# Compare resolvers side-by-side
+dns-benchmark compare Cloudflare Google Quad9 --show-details
+
+# Run monitoring for 1 hour with alerts
+dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
+  --alert-latency 150 --alert-failure-rate 5 --output monitor.log
+```
+
 </div>
 
 ---
-
 [![CI Tests](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml)
 [![Publish to TestPyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml)
 [![Publish to PyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml)
-[![PyPI version](https://img.shields.io/pypi/v/dns-benchmark-tool.svg)](https://pypi.org/project/dns-benchmark-tool/)
+[![PyPI version](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen)](https://pypi.org/project/dns-benchmark-tool/)
 
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen.svg)
 
-[![Downloads](https://img.shields.io/pypi/dm/dns-benchmark-tool.svg)](https://pypi.org/project/dns-benchmark-tool/)
+[![Downloads](https://img.shields.io/pypi/dm/dns-benchmark-tool.svg?color=blueviolet)](https://pypi.org/project/dns-benchmark-tool/)
 [![GitHub stars](https://img.shields.io/github/stars/frankovo/dns-benchmark-tool.svg?style=social&label=Star)](https://github.com/frankovo/dns-benchmark-tool/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/frankovo/dns-benchmark-tool.svg?style=social&label=Fork)](https://github.com/frankovo/dns-benchmark-tool/network/members)
-[![Issues](https://img.shields.io/github/issues/frankovo/dns-benchmark-tool.svg)](https://github.com/frankovo/dns-benchmark-tool/issues)
-[![Last commit](https://img.shields.io/github/last-commit/frankovo/dns-benchmark-tool.svg)](https://github.com/frankovo/dns-benchmark-tool/commits/main)
+[![Issues](https://img.shields.io/github/issues/frankovo/dns-benchmark-tool.svg?color=orange)](https://github.com/frankovo/dns-benchmark-tool/issues)
+[![Last commit](https://img.shields.io/github/last-commit/frankovo/dns-benchmark-tool.svg?color=blue)](https://github.com/frankovo/dns-benchmark-tool/commits/main)
 [![Main branch protected](https://img.shields.io/badge/branch%20protection-main%20✅-brightgreen)](https://github.com/frankovo/dns-benchmark-tool/blob/main/RELEASE.md)
 
 ## Table of Contents
 
 - [DNS Benchmark Tool](#dns-benchmark-tool)
   - [Part of BuildTools - Network Performance Suite](#part-of-buildtools---network-performance-suite)
+  - [🎉 Today’s Release Highlights ](#-todays-release-highlights-)
   - [Table of Contents](#table-of-contents)
   - [🎯 Why This Tool?](#-why-this-tool)
     - [The Problem](#the-problem)
@@ -71,8 +91,8 @@ dns-benchmark benchmark --use-defaults
     - [Basic Usage](#basic-usage)
     - [Advanced Usage](#advanced-usage)
   - [🔧 Utilities](#-utilities)
-    - [Risolver management](#risolver-management)
     - [Feedback](#feedback)
+    - [Risolver management](#risolver-management)
     - [Domain management](#domain-management)
       - [Category overview](#category-overview)
     - [Configuration management](#configuration-management)
@@ -85,6 +105,11 @@ dns-benchmark benchmark --use-defaults
       - [Enterprise IT](#enterprise-it)
   - [🔍 README Adjustments for Final Patch](#-readme-adjustments-for-final-patch)
     - [New CLI Options](#new-cli-options)
+  - [⚡ CLI Commands](#-cli-commands)
+    - [🚀 Top](#-top)
+    - [📊 Compare](#-compare)
+  - [🔄 Monitoring](#-monitoring)
+    - [🌟 Command Showcase](#-command-showcase)
     - [📊 Analysis Enhancements](#-analysis-enhancements)
     - [⚡ Best Practices](#-best-practices)
   - [Feedback \& Community Input](#feedback--community-input)
@@ -113,6 +138,7 @@ dns-benchmark benchmark --use-defaults
     - [3. PDF Executive Summary](#3-pdf-executive-summary)
     - [4. PDF Charts](#4-pdf-charts)
     - [5. Excel Charts](#5-excel-charts)
+    - [6. Real Time Monitoring](#6-real-time-monitoring)
   - [Getting help](#getting-help)
   - [Release workflow](#release-workflow)
   - [🌐 Hosted Version (Coming Soon)](#-hosted-version-coming-soon)
@@ -578,11 +604,149 @@ dns-benchmark benchmark \
   --formats csv \
   --quiet \
   --output /var/log/dns_benchmark/$(date +%Y%m%d_%H%M%S)
+
+# New top commands
+# Run a basic benchmark (default: rank by latency)
+dns-benchmark top
+# → Tests all resolvers with sample domains, ranks by latency
+
+# Limit the number of resolvers shown
+dns-benchmark top --limit 5
+# → Shows only the top 5 resolvers
+
+# Rank by success rate
+dns-benchmark top --metric success
+# → Ranks resolvers by highest success rate
+
+# Rank by reliability (combined score: success rate + latency)
+dns-benchmark top --metric reliability
+# → Uses weighted score to rank resolvers
+
+# Filter resolvers by category
+dns-benchmark top --category privacy
+dns-benchmark top --category family
+dns-benchmark top --category security
+# → Tests only resolvers in the specified category
+
+# Use a custom domain list
+dns-benchmark top --domains domains.txt
+# → Loads domains from a text file instead of built-in sample list
+
+# Specify DNS record types
+dns-benchmark top --record-types A,AAAA,MX
+# → Queries multiple record types (comma-separated)
+
+# Adjust timeout and concurrency
+dns-benchmark top --timeout 3.0 --max-concurrent 50
+# → Sets query timeout to 3 seconds and limits concurrency to 50
+
+# Export results to JSON
+dns-benchmark top --output results.json
+# → Saves results in JSON format
+
+# Export results to CSV
+dns-benchmark top --output results.csv
+# → Saves results in CSV format
+
+# Export results to TXT
+dns-benchmark top --output results.txt
+# → Saves results in plain text format
+
+# Quiet mode (no progress bar, CI/CD friendly)
+dns-benchmark top --quiet
+# → Suppresses progress output
+
+# Example combined usage
+dns-benchmark top --limit 10 --metric reliability --category privacy --output top_resolvers.csv
+# → Benchmarks privacy resolvers, ranks by reliability, shows top 10, exports to CSV
+
+# New compare commaands
+# Comparison of resolvers by name
+dns-benchmark compare Cloudflare Google Quad9
+# ^ Compares Cloudflare, Google, and Quad9 resolvers using default domains and record type A
+
+# Basic compare resolvers by IP address
+dns-benchmark compare 1.1.1.1 8.8.8.8 9.9.9.9
+# ^ Directly specify resolver IPs instead of names
+
+# Increase iterations for more stable results
+dns-benchmark compare "Cloudflare" "Google" --iterations 5
+# ^ Runs 5 rounds of queries per resolver/domain/record type
+
+# Use a custom domain list from file
+dns-benchmark compare Cloudflare Google -d ./data/domains.txt
+# ^ Loads domains from domains.txt instead of sample domains
+
+# Query multiple record types
+dns-benchmark compare Cloudflare Google -t A,AAAA,MX
+# ^ Tests A, AAAA, and MX records for each domain
+
+# Adjust timeout and concurrency
+dns-benchmark compare Cloudflare Google --timeout 3.0 --max-concurrent 200
+# ^ Sets query timeout to 3 seconds and allows 200 concurrent queries
+
+# Export results to JSON
+dns-benchmark compare Cloudflare Google -o results.json
+# ^ Saves comparison summary to results.json
+
+# Export results to CSV
+dns-benchmark compare Cloudflare Google -o results.csv
+# ^ Saves comparison summary to results.csv (via CSVExporter)
+
+# Suppress progress output
+dns-benchmark compare Cloudflare Google --quiet
+# ^ Runs silently, only prints final results
+
+# Show detailed per-domain breakdown
+dns-benchmark compare Cloudflare Google --show-details
+# ^ Prints average latency and success counts per domain for each resolver
+
+# New monitoring commands
+# Start monitoring with default resolvers and sample domains
+dns-benchmark monitoring --use-defaults
+# ^ Runs indefinitely, checking every 60s, using built-in resolvers and 5 sample domains
+
+# Monitor with a custom resolver list from JSON
+dns-benchmark monitoring -r resolvers.json --use-defaults
+# ^ Loads resolvers from resolvers.json, domains from defaults
+
+# Monitor with a custom domain list
+dns-benchmark monitoring -d domains.txt --use-defaults
+# ^ Uses default resolvers, but domains are loaded from domains.txt
+
+# Change monitoring interval to 30 seconds
+dns-benchmark monitoring --use-defaults --interval 30
+# ^ Runs checks every 30 seconds instead of 60
+
+# Run monitoring for a fixed duration (e.g., 1 hour = 3600 seconds)
+dns-benchmark monitoring --use-defaults --duration 3600
+# ^ Stops automatically after 1 hour
+
+# Set stricter alert thresholds
+dns-benchmark monitoring --use-defaults --alert-latency 150 --alert-failure-rate 5
+# ^ Alerts if latency >150ms or failure rate >5%
+
+# Save monitoring results to a log file
+dns-benchmark monitoring --use-defaults --output monitor.log
+# ^ Appends results and alerts to monitor.log
+
+# Combine options: custom resolvers, domains, interval, duration, and logging
+dns-benchmark monitoring -r resolvers.json -d domains.txt -i 45 --duration 1800 -o monitor.log
+# ^ Monitors resolvers from resolvers.json against domains.txt every 45s, for 30 minutes, logging to monitor.log
+
+# Run monitoring for 1 hour with alerts
+dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
+  --alert-latency 150 --alert-failure-rate 5 --output monitor.log
+
 ```
 
-## 🔧 Utilities
+---
 
-### Risolver management
+⚠️ **Note for new commands:** Resolvers with no successful queries are excluded from ranking and will display `Avg Latency: N/A`.
+
+---
+
+## 🔧 Utilities
 
 ### Feedback
 
@@ -591,10 +755,9 @@ dns-benchmark benchmark \
 dns-benchmark feedback
 ```
 
-```bash
-# Provide feedback
-dns-benchmark feedback
+### Risolver management
 
+```bash
 # Show default resolvers and domains
 dns-benchmark list-defaults
 
@@ -802,6 +965,73 @@ dns-benchmark benchmark \
 | `--warmup`         | Run a **full warmup** (all resolvers × domains × record types)              | `dns-benchmark benchmark --use-defaults --warmup`                       |
 | `--warmup-fast`    | Run a **lightweight warmup** (one probe per resolver)                       | `dns-benchmark benchmark --use-defaults --warmup-fast`                  |
 | `--include-charts` | Embed charts and graphs in PDF/Excel reports for visual performance analysis | `dns-benchmark benchmark --use-defaults --formats pdf,excel --include-charts` |
+
+---
+
+## ⚡ CLI Commands
+
+The DNS Benchmark Tool now includes three specialized commands for different workflows:
+
+### 🚀 Top
+Quickly rank resolvers by speed and reliability.
+
+```bash
+# Rank resolvers quickly
+dns-benchmark top --use-defaults
+
+# Use custom domain list
+dns-benchmark top -d domains.txt
+
+# Export results to JSON
+dns-benchmark top -o results.json
+```
+
+---
+
+### 📊 Compare
+Benchmark resolvers side‑by‑side with detailed statistics.
+
+```bash
+# Compare Cloudflare, Google, and Quad9
+dns-benchmark compare Cloudflare Google Quad9
+
+# Compare by IP addresses
+dns-benchmark compare 1.1.1.1 8.8.8.8 9.9.9.9
+
+# Show detailed per-domain breakdown
+dns-benchmark compare Cloudflare Google --show-details
+
+# Export results to CSV
+dns-benchmark compare Cloudflare Google -o results.csv
+```
+
+---
+
+## 🔄 Monitoring
+
+Continuously monitor resolver performance with alerts.
+
+```bash
+# Monitor default resolvers continuously (every 60s)
+dns-benchmark monitoring --use-defaults
+
+# Monitor with custom resolvers and domains
+dns-benchmark monitoring -r resolvers.json -d domains.txt
+
+# Run monitoring for 1 hour with alerts
+dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
+  --alert-latency 150 --alert-failure-rate 5 --output monitor.log
+```
+
+---
+
+### 🌟 Command Showcase
+
+| Command      | Purpose | Typical Use Case | Key Options | Output |
+|--------------|---------|------------------|-------------|--------|
+| **top**      | Quick ranking of resolvers by speed and reliability | Fast check to see which resolver is best right now | `--domains`, `--record-types`, `--iterations`, `--output` | Sorted list of resolvers with latency & success rate |
+| **compare**  | Side‑by‑side comparison of specific resolvers | Detailed benchmarking across chosen resolvers/domains | `--domains`, `--record-types`, `--iterations`, `--output`, `--show-details` | Table of resolvers with latency, success rate, per‑domain breakdown |
+| **monitoring** | Continuous monitoring with alerts | Real‑time tracking of resolver performance over time | `--interval`, `--duration`, `--alert-latency`, `--alert-failure-rate`, `--output`, `--use-defaults` | Live status indicators, alerts, optional log file |
 
 ---
 
@@ -1162,6 +1392,10 @@ Place images in `docs/screenshots/`:
 ### 5. Excel Charts
 
 [![Excel Charts](docs/screenshots/excel_charts.png)](https://github.com/frankovo/dns-benchmark-tool)
+
+### 6. Real Time Monitoring
+
+[![Real Time Monitoring](docs/screenshots/real_time_monitoring.png)](https://github.com/frankovo/dns-benchmark-tool)
 
 ---
 
