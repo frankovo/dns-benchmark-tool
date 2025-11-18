@@ -102,10 +102,19 @@ class BenchmarkAnalyzer:
                 cv = std_latency / avg_latency if avg_latency > 0 else 0
                 consistency_score = max(0, 100 - (cv * 100))
             else:
+                # min_latency = max_latency = avg_latency = median_latency = (
+                #     std_latency
+                # ) = 0.0
+                # p95_latency = p99_latency = jitter = consistency_score = 0.0
+                # No successful queries → mark latency as None
+                # min_latency = max_latency = avg_latency = median_latency = (
+                #     std_latency
+                # ) = None
                 min_latency = max_latency = avg_latency = median_latency = (
                     std_latency
-                ) = 0.0
-                p95_latency = p99_latency = jitter = consistency_score = 0.0
+                ) = float("nan")
+                p95_latency = p99_latency = jitter = 0.0
+                consistency_score = 0.0
 
             stats = ResolverStats(
                 resolver_name=resolver_name,

@@ -4,15 +4,21 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import click
 import pyfiglet
 from colorama import Fore, Style, init
 from tqdm import tqdm
 
+from dns_benchmark import __version__
 from dns_benchmark.analysis import BenchmarkAnalyzer
-from dns_benchmark.core import DNSQueryEngine, DomainManager, ResolverManager
+from dns_benchmark.core import (
+    DNSQueryEngine,
+    DomainManager,
+    QueryStatus,
+    ResolverManager,
+)
 from dns_benchmark.exporters import (
     CSVExporter,
     ExcelExporter,
@@ -33,6 +39,7 @@ init()
 
 
 @click.group()
+@click.version_option(__version__, prog_name="DNS Benchmark Tool")
 def cli() -> None:
     """
     Buildtools - DNS Benchmark Tool - Measure and compare DNS resolver performance
@@ -271,9 +278,7 @@ def reset_feedback() -> None:
     click.echo(click.style("✓ Feedback state reset", fg="green"))
 
 
-# ============= End Survey
-
-
+# Benchmark command
 @cli.command()
 @click.option("--resolvers", "-r", help="JSON file with resolver list")
 @click.option("--domains", "-d", help="Text file with domain list")
@@ -310,10 +315,10 @@ def reset_feedback() -> None:
     is_flag=True,
     help="Run lightweight warmup (one probe per resolver)",
 )
-# NEW OPTION - Add this line
 @click.option(
     "--include-charts", is_flag=True, help="Include charts in Excel and PDF exports"
 )
+# =================== Benchmark
 def benchmark(
     resolvers: Optional[str],
     domains: Optional[str],
@@ -615,6 +620,773 @@ def benchmark(
     # This runs only if no exceptions occurred
     if benchmark_started and not quiet:
         show_feedback_prompt()
+
+
+@cli.command()
+@click.option("--limit", "-n", default=10, help="Number of top resolvers to display")
+@click.option(
+    "--metric",
+    "-m",
+    type=click.Choice(["latency", "success", "reliability"], case_sensitive=False),
+    default="latency",
+    help="Metric to rank by (latency=fastest, success=highest success rate, reliability=combined score)",
+)
+@click.option("--domains", "-d", help="Text file with domain list")
+@click.option(
+    "--record-types",
+    "-t",
+    default="A",
+    help="DNS record types to query (comma-separated)",
+)
+@click.option("--timeout", default=5.0, help="Query timeout in seconds")
+@click.option("--max-concurrent", default=100, help="Maximum concurrent queries")
+@click.option(
+    "--category",
+    "-c",
+    help="Filter resolvers by category (privacy, security, family, performance, etc.)",
+)
+@click.option(
+    "--output", "-o", help="Optional: save results to file (supports .txt, .json, .csv)"
+)
+@click.option("--quiet", is_flag=True, help="Suppress progress output")
+# ====================== Top
+def top(
+    limit: int,
+    metric: str,
+    domains: Optional[str],
+    record_types: str,
+    timeout: float,
+    max_concurrent: int,
+    category: Optional[str],
+    output: Optional[str],
+    quiet: bool,
+) -> None:
+    """Find and rank the top performing DNS resolvers.
+
+    Examples:
+        dns-benchmark top --limit 5
+        dns-benchmark top --metric success --category privacy
+        dns-benchmark top --limit 10 --output top_resolvers.json
+    """
+    start_time = time.time()
+    if not quiet:
+        click.echo(info("🔍 Finding top DNS resolvers..."))
+
+    # Get resolvers
+    if category:
+        all_resolvers = ResolverManager.get_resolvers_by_category(category)
+        if not all_resolvers:
+            available = ", ".join(ResolverManager.get_categories())
+            click.echo(error(f"No resolvers found for category '{category}'."))
+            click.echo(info(f"Available categories: {available}"))
+            return
+        resolver_list = [{"name": r["name"], "ip": r["ip"]} for r in all_resolvers]
+        if not quiet:
+            click.echo(
+                success(
+                    f"Testing {len(resolver_list)} resolvers in category '{category}'"
+                )
+            )
+    else:
+        # Use all available resolvers for comprehensive ranking
+        all_resolvers = ResolverManager.get_all_resolvers()
+        resolver_list = [{"name": r["name"], "ip": r["ip"]} for r in all_resolvers]
+        if not quiet:
+            click.echo(success(f"Testing {len(resolver_list)} resolvers"))
+
+    # Get domains
+    if domains:
+        try:
+            domain_list = DomainManager.load_domains_from_file(domains)
+        except Exception as e:
+            click.echo(error(f"Error loading domains: {e}"))
+            return
+    else:
+        domain_list = DomainManager.get_sample_domains()
+
+    # Parse record types
+    record_type_list = [rt.strip().upper() for rt in record_types.split(",")]
+
+    # Run benchmark
+    total_queries = len(resolver_list) * len(domain_list) * len(record_type_list)
+    if not quiet:
+        click.echo(info(f"Running {total_queries} queries..."))
+
+    progress_bar = None
+    if not quiet:
+        progress_bar = create_progress_bar(total_queries, "Testing resolvers")
+
+    try:
+        engine = DNSQueryEngine(
+            max_concurrent_queries=max_concurrent,
+            timeout=timeout,
+            enable_cache=False,
+        )
+
+        if progress_bar:
+
+            def _progress_cb(completed: int, total: int) -> None:
+                try:
+                    if progress_bar:
+                        progress_bar.n = completed
+                        progress_bar.refresh()
+                except Exception:
+                    pass
+
+            engine.set_progress_callback(_progress_cb)
+
+        results = asyncio.run(
+            engine.run_benchmark(
+                resolvers=resolver_list,
+                domains=domain_list,
+                record_types=record_type_list,
+                warmup_fast=True,
+            )
+        )
+
+        if progress_bar:
+            progress_bar.close()
+
+        duration = time.time() - start_time
+
+        if not quiet:
+            click.echo(success(f"Benchmark completed in {duration:.2f} seconds"))
+
+        # Analyze and rank
+        analyzer = BenchmarkAnalyzer(results)
+        resolver_stats_list = analyzer.get_resolver_statistics()
+
+        # Convert list of ResolverStats objects to dict for easier lookup
+        resolver_stats = {stats.resolver_name: stats for stats in resolver_stats_list}
+
+        # Calculate ranking score based on metric
+        scored_resolvers = []
+        for name, stats in resolver_stats.items():
+            if metric == "latency":
+                if stats.successful_queries > 0 and stats.avg_latency is not None:
+                    score = stats.avg_latency
+                else:
+                    score = float("-inf")  # push failed resolvers to bottom
+
+            elif metric == "success":
+                # Higher is better
+                score = stats.success_rate
+            else:  # reliability (combined)
+                # Weighted score: 60% success rate, 40% speed (normalized)
+                if stats.successful_queries > 0 and stats.avg_latency not in (None, 0):
+                    latency_score = max(0, 100 - (stats.avg_latency / 5))
+                    score = (stats.success_rate * 0.6) + (latency_score * 0.4)
+                else:
+                    score = stats.success_rate * 0.6
+
+            scored_resolvers.append((name, stats, score))
+
+        # Sort by score (descending)
+        scored_resolvers.sort(key=lambda x: x[2], reverse=True)
+
+        # Display top N
+        top_resolvers = scored_resolvers[:limit]
+
+        if not quiet:
+            click.echo(
+                success(f"\n🏆 Top {len(top_resolvers)} DNS Resolvers (by {metric}):\n")
+            )
+
+            for rank, (name, stats, score) in enumerate(top_resolvers, 1):
+                medal = (
+                    "🥇"
+                    if rank == 1
+                    else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
+                )
+
+                click.echo(Fore.CYAN + f"{medal} {name}" + Style.RESET_ALL)
+                latency_str = (
+                    f"{stats.avg_latency:.2f} ms"
+                    if stats.avg_latency is not None
+                    else "N/A"
+                )
+                click.echo(
+                    f"   Avg Latency: {Fore.GREEN}{latency_str}{Style.RESET_ALL}"
+                )
+                click.echo(
+                    f"   Success Rate: {Fore.GREEN}{stats.success_rate:.1f}%{Style.RESET_ALL}"
+                )
+                click.echo(
+                    f"   Queries: {stats.successful_queries}/{stats.total_queries}"
+                )
+
+                if metric == "reliability":
+                    click.echo(
+                        f"   Reliability Score: {Fore.YELLOW}{score:.2f}/100{Style.RESET_ALL}"
+                    )
+                click.echo()
+
+        # Export if requested
+        if output:
+            output_path = Path(output)
+            ext = output_path.suffix.lower()
+
+            if ext == ".json":
+                export_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "metric": metric,
+                    "category": category,
+                    "top_resolvers": [
+                        {
+                            "rank": i + 1,
+                            "name": name,
+                            "avg_latency_ms": stats.avg_latency,
+                            "success_rate": stats.success_rate,
+                            "successful_queries": stats.successful_queries,
+                            "total_queries": stats.total_queries,
+                            # "score": score,
+                        }
+                        for i, (name, stats, score) in enumerate(top_resolvers)
+                    ],
+                }
+                with open(output_path, "w") as f:
+                    json.dump(export_data, f, indent=2)
+
+            elif ext == ".csv":
+                import csv
+
+                with open(output_path, "w", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(
+                        [
+                            "Rank",
+                            "Resolver",
+                            "Avg Latency (ms)",
+                            "Success Rate (%)",
+                            "Successful",
+                            "Total",
+                            # "Score"
+                        ]
+                    )
+                    for i, (name, stats, score) in enumerate(top_resolvers, 1):
+                        writer.writerow(
+                            [
+                                i,
+                                name,
+                                (
+                                    f"{stats.avg_latency:.2f}"
+                                    if stats.avg_latency is not None
+                                    else "N/A"
+                                ),
+                                f"{stats.success_rate:.1f}",
+                                stats.successful_queries,
+                                stats.total_queries,
+                                # f"{score:.2f}"
+                            ]
+                        )
+
+            else:  # .txt or default
+                with open(output_path, "w") as f:
+                    f.write(f"Top {len(top_resolvers)} DNS Resolvers (by {metric})\n")
+                    f.write(
+                        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    )
+                    if category:
+                        f.write(f"Category: {category}\n")
+                    f.write("\n" + "=" * 60 + "\n\n")
+
+                    for rank, (name, stats, score) in enumerate(top_resolvers, 1):
+                        f.write(f"{rank}. {name}\n")
+                        f.write(
+                            f"   Avg Latency: {stats.avg_latency:.2f} ms\n"
+                            if stats.avg_latency is not None
+                            else "   Avg Latency: N/A\n"
+                        )
+                        f.write(f"   Success Rate: {stats.success_rate:.1f}%\n")
+                        f.write(
+                            f"   Queries: {stats.successful_queries}/{stats.total_queries}\n"
+                        )
+                        # if metric == "reliability":
+                        #     f.write(f"   Score: {score:.2f}/100\n")
+                        f.write("\n")
+            # Add summary note if any resolvers had no successful queries
+            failed_resolvers = [
+                s for s in resolver_stats.values() if s.successful_queries == 0
+            ]
+            if failed_resolvers and not quiet:
+                click.echo(
+                    warning(
+                        "⚠️ Some resolvers returned no successful queries and were excluded from ranking"
+                    )
+                )
+
+            if not quiet:
+                click.echo(success(f"Results saved to: {output_path}"))
+
+    except KeyboardInterrupt:
+        if progress_bar:
+            progress_bar.close()
+        click.echo(warning("\nTest interrupted by user"))
+    except Exception as e:
+        if progress_bar:
+            progress_bar.close()
+        click.echo(error(f"Error during test: {e}"))
+        raise
+
+
+# ======================= Compare
+
+
+@cli.command()
+@click.argument("resolvers", nargs=-1, required=True)
+@click.option("--domains", "-d", help="Text file with domain list")
+@click.option(
+    "--record-types",
+    "-t",
+    default="A",
+    help="DNS record types to query (comma-separated)",
+)
+@click.option("--timeout", default=5.0, help="Query timeout in seconds")
+@click.option("--max-concurrent", default=100, help="Maximum concurrent queries")
+@click.option("--iterations", "-i", default=3, help="Number of test iterations")
+@click.option("--output", "-o", help="Optional: save comparison to file")
+@click.option("--quiet", is_flag=True, help="Suppress progress output")
+@click.option("--show-details", is_flag=True, help="Show detailed per-domain breakdown")
+def compare(
+    resolvers: Tuple[str],
+    domains: Optional[str],
+    record_types: str,
+    timeout: float,
+    max_concurrent: int,
+    iterations: int,
+    output: Optional[str],
+    quiet: bool,
+    show_details: bool,
+) -> None:
+    """Compare specific DNS resolvers side-by-side.
+
+    You can specify resolvers by name or IP address.
+
+    Examples:
+        dns-benchmark compare Cloudflare Google Quad9
+        dns-benchmark compare 1.1.1.1 8.8.8.8 9.9.9.9
+        dns-benchmark compare "Cloudflare" "Google" --iterations 5
+    """
+    if not quiet:
+        click.echo(info(f"🔬 Comparing {len(resolvers)} DNS resolvers..."))
+
+    # Resolve resolver names to IPs
+    all_resolvers = ResolverManager.get_all_resolvers()
+    resolver_list = []
+
+    for resolver_input in resolvers:
+        # Try to match by name first
+        matched = False
+        for r in all_resolvers:
+            if r["name"].lower() == resolver_input.lower():
+                resolver_list.append({"name": r["name"], "ip": r["ip"]})
+                matched = True
+                break
+
+        # If no name match, assume it's an IP
+        if not matched:
+            # Validate IP format (basic check)
+            if "." in resolver_input or ":" in resolver_input:
+                resolver_list.append({"name": resolver_input, "ip": resolver_input})
+            else:
+                click.echo(warning(f"Could not resolve '{resolver_input}' - skipping"))
+
+    if len(resolver_list) < 2:
+        click.echo(error("Need at least 2 valid resolvers to compare"))
+        return
+
+    if not quiet:
+        click.echo(
+            success(f"Comparing: {', '.join([r['name'] for r in resolver_list])}")
+        )
+
+    # Get domains
+    if domains:
+        try:
+            domain_list = DomainManager.load_domains_from_file(domains)
+        except Exception as e:
+            click.echo(error(f"Error loading domains: {e}"))
+            return
+    else:
+        domain_list = DomainManager.get_sample_domains()
+
+    # Parse record types
+    record_type_list = [rt.strip().upper() for rt in record_types.split(",")]
+
+    # Run benchmark
+    total_queries = (
+        len(resolver_list) * len(domain_list) * len(record_type_list) * iterations
+    )
+    if not quiet:
+        click.echo(
+            info(f"Running {total_queries} queries across {iterations} iterations...")
+        )
+
+    progress_bar = None
+    if not quiet:
+        progress_bar = create_progress_bar(total_queries, "Comparing")
+
+    try:
+        engine = DNSQueryEngine(
+            max_concurrent_queries=max_concurrent,
+            timeout=timeout,
+            enable_cache=False,
+        )
+
+        if progress_bar:
+
+            def _progress_cb(completed: int, total: int) -> None:
+                try:
+                    if progress_bar:
+                        progress_bar.n = completed
+                        progress_bar.refresh()
+                except Exception:
+                    pass
+
+            engine.set_progress_callback(_progress_cb)
+
+        results = asyncio.run(
+            engine.run_benchmark(
+                resolvers=resolver_list,
+                domains=domain_list,
+                record_types=record_type_list,
+                iterations=iterations,
+                warmup_fast=True,
+            )
+        )
+
+        if progress_bar:
+            progress_bar.close()
+
+        # Analyze
+        analyzer = BenchmarkAnalyzer(results)
+        resolver_stats_list = analyzer.get_resolver_statistics()
+
+        # Convert list of ResolverStats objects to dict for easier lookup
+        resolver_stats = {stats.resolver_name: stats for stats in resolver_stats_list}
+
+        # Display comparison
+        if not quiet:
+            click.echo(success("📊 Comparison Results:\n"))
+
+            # Header
+            click.echo(
+                Fore.CYAN
+                + f"{'Resolver':<20} {'Avg Latency':<15} {'Success Rate':<15} {'Queries':<10}"
+                + Style.RESET_ALL
+            )
+            click.echo("-" * 65)
+
+            # Sort by latency for display
+            sorted_stats = sorted(
+                resolver_stats.items(), key=lambda x: x[1].avg_latency
+            )
+
+            for name, stats in sorted_stats:
+                latency_color = (
+                    Fore.GREEN
+                    if stats.avg_latency < 50
+                    else Fore.YELLOW if stats.avg_latency < 100 else Fore.RED
+                )
+                success_color = (
+                    Fore.GREEN
+                    if stats.success_rate >= 95
+                    else Fore.YELLOW if stats.success_rate >= 80 else Fore.RED
+                )
+
+                click.echo(
+                    f"{name:<20} "
+                    f"{latency_color}{stats.avg_latency:>6.2f} ms{Style.RESET_ALL}{'':>4} "
+                    f"{success_color}{stats.success_rate:>6.1f}%{Style.RESET_ALL}{'':>6} "
+                    f"{stats.successful_queries}/{stats.total_queries}"
+                )
+
+            # Winner
+            click.echo()
+            fastest = min(sorted_stats, key=lambda x: x[1].avg_latency)
+            most_reliable = max(sorted_stats, key=lambda x: x[1].success_rate)
+
+            click.echo(
+                Fore.GREEN
+                + "🏆 Fastest: "
+                + Style.RESET_ALL
+                + f"{fastest[0]} ({fastest[1].avg_latency:.2f} ms)"
+            )
+            click.echo(
+                Fore.GREEN
+                + "🛡️  Most Reliable: "
+                + Style.RESET_ALL
+                + f"{most_reliable[0]} ({most_reliable[1].success_rate:.1f}%)"
+            )
+
+            # Per-domain details if requested
+            if show_details:
+                click.echo(success("📋 Per-Domain Breakdown:\n"))
+                domain_stats = analyzer.get_domain_statistics()
+
+                for dom_stat in domain_stats[:10]:  # Limit to first 10
+                    domain = dom_stat["domain"]
+                    click.echo(Fore.CYAN + f"\n{domain}:" + Style.RESET_ALL)
+
+                    for name in [r["name"] for r in resolver_list]:
+                        # Find results for this resolver+domain
+                        domain_results = [
+                            r
+                            for r in results
+                            if r.resolver_name == name and r.domain == domain
+                        ]
+                        if domain_results:
+                            avg_lat = sum(r.latency_ms for r in domain_results) / len(
+                                domain_results
+                            )
+                            successes = sum(
+                                1
+                                for r in domain_results
+                                if r.status == QueryStatus.SUCCESS
+                            )
+                            click.echo(
+                                f"  {name:<20} {avg_lat:>6.2f} ms  ({successes}/{len(domain_results)} success)"
+                            )
+
+        # Export if requested
+        if output:
+            output_path = Path(output)
+            ext = output_path.suffix.lower()
+
+            if ext == ".json":
+                import json
+
+                export_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "iterations": iterations,
+                    "comparison": [
+                        {
+                            "resolver": name,
+                            "avg_latency_ms": stats.avg_latency,
+                            "median_latency_ms": stats.median_latency,
+                            "success_rate": stats.success_rate,
+                            "successful_queries": stats.successful_queries,
+                            "total_queries": stats.total_queries,
+                        }
+                        for name, stats in resolver_stats.items()
+                    ],
+                }
+                with open(output_path, "w") as f:
+                    json.dump(export_data, f, indent=2)
+
+            else:  # csv
+                CSVExporter.export_summary_statistics(analyzer, str(output_path))
+
+            if not quiet:
+                click.echo(success(f"Comparison saved to: {output_path}"))
+
+    except KeyboardInterrupt:
+        if progress_bar:
+            progress_bar.close()
+        click.echo(warning("Comparison interrupted by user"))
+    except Exception as e:
+        if progress_bar:
+            progress_bar.close()
+        click.echo(error(f"Error during comparison: {e}"))
+        raise
+
+
+@cli.command()
+@click.option("--resolvers", "-r", help="JSON file with resolver list")
+@click.option("--domains", "-d", help="Text file with domain list")
+@click.option(
+    "--interval",
+    "-i",
+    default=60,
+    help="Monitoring interval in seconds (default: 60)",
+)
+@click.option(
+    "--duration",
+    default=0,
+    help="Total monitoring duration in seconds (0 = indefinite)",
+)
+@click.option(
+    "--alert-latency",
+    default=200.0,
+    help="Alert if latency exceeds this threshold (ms)",
+)
+@click.option(
+    "--alert-failure-rate",
+    default=10.0,
+    help="Alert if failure rate exceeds this threshold (%)",
+)
+@click.option("--output", "-o", help="Log file for monitoring results")
+@click.option(
+    "--use-defaults", is_flag=True, help="Use default resolvers and sample domains"
+)
+# ==================== Monitoring
+def monitoring(
+    resolvers: Optional[str],
+    domains: Optional[str],
+    interval: int,
+    duration: int,
+    alert_latency: float,
+    alert_failure_rate: float,
+    output: Optional[str],
+    use_defaults: bool,
+) -> None:
+    """Continuously monitor DNS resolver performance.
+
+    Monitor DNS resolvers in real-time and alert on issues.
+
+    Examples:
+        dns-benchmark monitoring --use-defaults
+        dns-benchmark monitoring --interval 30 --duration 3600
+        dns-benchmark monitoring --alert-latency 150 --output monitor.log
+    """
+    click.echo(info("🔄 Starting DNS monitoring..."))
+    click.echo(warning("Press Ctrl+C to stop monitoring\n"))
+
+    # Load resolvers
+    if use_defaults:
+        resolver_list = ResolverManager.get_default_resolvers()
+        click.echo(success(f"Monitoring {len(resolver_list)} default resolvers"))
+    elif resolvers:
+        try:
+            resolver_list = ResolverManager.load_resolvers_from_file(resolvers)
+            click.echo(success(f"Monitoring {len(resolver_list)} resolvers"))
+        except Exception as e:
+            click.echo(error(f"Error loading resolvers: {e}"))
+            return
+    else:
+        click.echo(error("Either provide --resolvers or use --use-defaults"))
+        return
+
+    # Load domains
+    if use_defaults:
+        # Use a smaller set for monitoring
+        domain_list = DomainManager.get_sample_domains()[:5]
+    elif domains:
+        try:
+            domain_list = DomainManager.load_domains_from_file(domains)
+        except Exception as e:
+            click.echo(error(f"Error loading domains: {e}"))
+            return
+    else:
+        domain_list = DomainManager.get_sample_domains()[:5]
+
+    click.echo(info(f"Testing against {len(domain_list)} domains"))
+    click.echo(info(f"Check interval: {interval}s"))
+    if duration > 0:
+        click.echo(info(f"Duration: {duration}s"))
+    click.echo(info(f"Latency alert threshold: {alert_latency} ms"))
+    click.echo(info(f"Failure rate alert threshold: {alert_failure_rate}%\n"))
+
+    # Setup output log
+    log_file = None
+    if output:
+        log_file = open(output, "a")
+        log_file.write(f"\n{'=' * 60}\n")
+        log_file.write(
+            f"Monitoring started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+        log_file.write(f"{'=' * 60}\n\n")
+
+    start_time = time.time()
+    iteration = 0
+
+    try:
+        while True:
+            iteration += 1
+            check_time = datetime.now().strftime("%H:%M:%S")
+
+            click.echo(
+                Fore.CYAN + f"[{check_time}] Check #{iteration}" + Style.RESET_ALL
+            )
+
+            # Run quick benchmark
+            engine = DNSQueryEngine(
+                max_concurrent_queries=50,
+                timeout=5.0,
+                enable_cache=False,
+            )
+
+            results = asyncio.run(
+                engine.run_benchmark(
+                    resolvers=resolver_list,
+                    domains=domain_list,
+                    record_types=["A"],
+                    warmup=False,
+                )
+            )
+
+            # Analyze
+            analyzer = BenchmarkAnalyzer(results)
+            resolver_stats_list = analyzer.get_resolver_statistics()
+
+            # Check for alerts
+            alerts = []
+            for stats in resolver_stats_list:
+                if stats.avg_latency > alert_latency:
+                    alerts.append(
+                        f"⚠️  {stats.resolver_name}: High latency ({stats.avg_latency:.2f} ms)"
+                    )
+
+                failure_rate = 100 - stats.success_rate
+                if failure_rate > alert_failure_rate:
+                    alerts.append(
+                        f"⚠️  {stats.resolver_name}: High failure rate ({failure_rate:.1f}%)"
+                    )
+
+            # Display results
+            for stats in resolver_stats_list:
+                latency_indicator = (
+                    "🟢"
+                    if stats.avg_latency < 50
+                    else "🟡" if stats.avg_latency < 100 else "🔴"
+                )
+                success_indicator = (
+                    "🟢"
+                    if stats.success_rate >= 95
+                    else "🟡" if stats.success_rate >= 80 else "🔴"
+                )
+
+                status_line = f"  {stats.resolver_name:<20} {latency_indicator} {stats.avg_latency:>6.2f} ms  {success_indicator} {stats.success_rate:>5.1f}%"
+                click.echo(status_line)
+
+                if log_file:
+                    log_file.write(
+                        f"[{check_time}] {stats.resolver_name}: {stats.avg_latency:.2f} ms, {stats.success_rate:.1f}% success\n"
+                    )
+
+            # Display alerts
+            if alerts:
+                click.echo()
+                for alert in alerts:
+                    click.echo(Fore.RED + alert + Style.RESET_ALL)
+                    if log_file:
+                        log_file.write(f"[{check_time}] ALERT: {alert}\n")
+
+            click.echo()
+
+            if log_file:
+                log_file.flush()
+
+            # Check duration
+            if duration > 0 and (time.time() - start_time) >= duration:
+                click.echo(success("Monitoring duration completed"))
+                break
+
+            # Wait for next interval
+            time.sleep(interval)
+
+    except KeyboardInterrupt:
+        click.echo(warning("Monitoring stopped by user"))
+    except Exception as e:
+        click.echo(error(f"Error during monitoring: {e}"))
+        raise
+    finally:
+        if log_file:
+            log_file.write(
+                f"Monitoring ended: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
+            log_file.close()
+            click.echo(success(f"Monitoring log saved to: {output}"))
 
 
 @cli.command()
