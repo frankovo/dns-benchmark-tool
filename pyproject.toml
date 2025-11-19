@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dns-benchmark-tool"
-version = "0.2.9"
+version = "0.3.0"
 description = "Benchmark DNS resolvers across domains and record types with analytics and reports (CSV, Excel, PDF, JSON)."
 readme = "README-pypi.md"
 authors = [
@@ -108,7 +108,7 @@ addopts = "-ra -q"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.2.9"
+version = "0.3.0"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",
