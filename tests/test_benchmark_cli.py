@@ -1,6 +1,10 @@
+import csv
 import json
+import re
 import tempfile
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import click
@@ -15,6 +19,12 @@ from dns_benchmark.cli import (
     reset_feedback,
     show_feedback_prompt,
 )
+from dns_benchmark.core import DNSQueryResult, QueryStatus
+
+
+@pytest.fixture
+def runner():
+    return CliRunner()
 
 
 @pytest.fixture
@@ -311,3 +321,450 @@ def test_reset_feedback_command(temp_config_dir):
 
     # File should be gone
     assert not manager.config_file.exists()
+
+
+def strip_ansi(text: str) -> str:
+    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    return ansi_escape.sub("", text)
+
+
+def fake_stats():
+    return [
+        SimpleNamespace(
+            resolver_name="Cloudflare",
+            avg_latency=20.0,
+            success_rate=100.0,
+            successful_queries=5,
+            total_queries=5,
+        ),
+        SimpleNamespace(
+            resolver_name="Google",
+            avg_latency=50.0,
+            success_rate=90.0,
+            successful_queries=9,
+            total_queries=10,
+        ),
+    ]
+
+
+def run_top_with_export(tmp_path, ext):
+    runner = CliRunner()
+    output_file = tmp_path / f"results{ext}"
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_all_resolvers",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark", return_value=[]
+            ):
+                with patch(
+                    "dns_benchmark.cli.BenchmarkAnalyzer.get_resolver_statistics",
+                    return_value=fake_stats(),
+                ):
+                    result = runner.invoke(
+                        cli, ["top", "--limit", "2", "-o", str(output_file)]
+                    )
+    return result, output_file
+
+
+def test_top_export_json(tmp_path):
+    result, output_file = run_top_with_export(tmp_path, ".json")
+    assert result.exit_code == 0, result.output
+    data = json.loads(output_file.read_text())
+    assert "top_resolvers" in data
+    assert any(r["name"] == "Cloudflare" for r in data["top_resolvers"])
+
+
+def test_top_export_csv(tmp_path):
+    result, output_file = run_top_with_export(tmp_path, ".csv")
+    assert result.exit_code == 0, result.output
+    rows = list(csv.reader(output_file.open()))
+    assert rows[0][:2] == ["Rank", "Resolver"]
+    assert any("Cloudflare" in row for row in rows)
+
+
+def test_top_export_txt(tmp_path):
+    result, output_file = run_top_with_export(tmp_path, ".txt")
+    assert result.exit_code == 0, result.output
+    text = output_file.read_text()
+    assert "Top" in text
+    assert "Cloudflare" in text
+    assert "Google" in text
+
+
+def test_top_command_runs(runner):
+    """Ensure `top` command executes and prints results."""
+    fake_stats = [
+        SimpleNamespace(
+            resolver_name="Cloudflare",
+            avg_latency=20.0,
+            success_rate=100.0,
+            successful_queries=5,
+            total_queries=5,
+        ),
+        SimpleNamespace(
+            resolver_name="Google",
+            avg_latency=50.0,
+            success_rate=100.0,
+            successful_queries=5,
+            total_queries=5,
+        ),
+    ]
+
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_all_resolvers",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark", return_value=[]
+            ):
+                with patch(
+                    "dns_benchmark.cli.BenchmarkAnalyzer.get_resolver_statistics",
+                    return_value=fake_stats,
+                ):
+                    result = runner.invoke(
+                        cli, ["top", "--limit", "2", "--metric", "latency"]
+                    )
+                    assert result.exit_code == 0, result.output
+                    clean_output = strip_ansi(result.output)
+                    assert "Cloudflare" in clean_output
+                    assert "Google" in clean_output
+
+
+# Compare
+def test_compare_command_runs(runner, sample_results, tmp_path):
+    """Ensure `compare` command executes and can export results."""
+    output_file = tmp_path / "results.json"
+    with patch(
+        "dns_benchmark.cli.DNSQueryEngine.run_benchmark", return_value=sample_results
+    ):
+        result = runner.invoke(
+            cli, ["compare", "Cloudflare", "Google", "-o", str(output_file), "--quiet"]
+        )
+        assert result.exit_code == 0
+        # Output file should be created
+        assert output_file.exists()
+        data = json.loads(output_file.read_text())
+        assert "comparison" in data
+        assert any(entry["resolver"] == "Cloudflare" for entry in data["comparison"])
+
+
+@pytest.mark.parametrize("ext", [".json", ".csv"])
+def test_compare_export(tmp_path, runner, sample_results, ext):
+    output_file = tmp_path / f"compare{ext}"
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_all_resolvers",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark",
+                return_value=sample_results,
+            ):
+                result = runner.invoke(
+                    cli, ["compare", "Cloudflare", "Google", "-o", str(output_file)]
+                )
+                assert result.exit_code == 0
+                assert output_file.exists()
+                if ext == ".json":
+                    data = json.loads(output_file.read_text())
+                    assert "comparison" in data
+                    assert any(
+                        r["resolver"] == "Cloudflare" for r in data["comparison"]
+                    )
+                else:
+                    assert "Cloudflare" in output_file.read_text()
+
+
+def test_compare_winner_logic(runner, sample_results):
+    """Ensure fastest and most reliable resolvers are printed."""
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_all_resolvers",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark",
+                return_value=sample_results,
+            ):
+                result = runner.invoke(cli, ["compare", "Cloudflare", "Google"])
+                assert result.exit_code == 0
+                assert "🏆 Fastest" in result.output
+                assert "🛡️  Most Reliable" in result.output
+
+
+def test_compare_show_details(runner, sample_results):
+    """Ensure per-domain breakdown is printed when --show-details is used."""
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_all_resolvers",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark",
+                return_value=sample_results,
+            ):
+                result = runner.invoke(
+                    cli, ["compare", "Cloudflare", "Google", "--show-details"]
+                )
+                assert result.exit_code == 0
+                assert "📋 Per-Domain Breakdown" in result.output
+                assert "example.com" in result.output
+
+
+# Monitoring
+def test_monitoring_command_runs_once(runner, sample_results, tmp_path):
+    """Run monitoring with duration=1 to exit quickly."""
+    log_file = tmp_path / "monitor.log"
+    with patch(
+        "dns_benchmark.cli.DNSQueryEngine.run_benchmark", return_value=sample_results
+    ):
+        # Patch time.sleep to avoid waiting
+        with patch("time.sleep", return_value=None):
+            result = runner.invoke(
+                cli,
+                [
+                    "monitoring",
+                    "--use-defaults",
+                    "--duration",
+                    "1",
+                    "--interval",
+                    "1",
+                    "-o",
+                    str(log_file),
+                ],
+            )
+            assert result.exit_code == 0
+            # Log file should contain resolver stats
+            text = log_file.read_text()
+            assert "Cloudflare" in text
+            assert "Google" in text
+
+
+def test_monitoring_runs_once(runner, sample_results, tmp_path):
+    """Run monitoring with duration=1 to exit after one loop."""
+    log_file = tmp_path / "monitor.log"
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_default_resolvers",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark",
+                return_value=sample_results,
+            ):
+                with patch("time.sleep", return_value=None):
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "monitoring",
+                            "--use-defaults",
+                            "--interval",
+                            "1",
+                            "--duration",
+                            "1",
+                            "--alert-latency",
+                            "30",
+                            "--alert-failure-rate",
+                            "5",
+                            "-o",
+                            str(log_file),
+                        ],
+                    )
+                    assert result.exit_code == 0
+                    text = log_file.read_text()
+                    assert "Cloudflare" in text
+                    assert "Google" in text
+
+
+def test_monitoring_alerts_triggered(runner, tmp_path):
+    """Ensure alerts are printed when thresholds are exceeded."""
+    now = time.time()
+    results = [
+        DNSQueryResult(
+            resolver_ip="1.1.1.1",
+            resolver_name="Cloudflare",
+            domain="example.com",
+            record_type="A",
+            start_time=now,
+            end_time=now + 0.200,
+            latency_ms=200.0,
+            status=QueryStatus.SUCCESS,
+            answers=["93.184.216.34"],
+            ttl=300,
+        ),
+        DNSQueryResult(
+            resolver_ip="8.8.8.8",
+            resolver_name="Google",
+            domain="example.com",
+            record_type="A",
+            start_time=now,
+            end_time=now + 0.300,
+            latency_ms=300.0,
+            status=QueryStatus.NXDOMAIN,
+            answers=[],
+            ttl=None,
+            error_message="NXDOMAIN",
+        ),
+    ]
+
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_default_resolvers",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark", return_value=results
+            ):
+                with patch("time.sleep", return_value=None):
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "monitoring",
+                            "--use-defaults",
+                            "--interval",
+                            "1",
+                            "--duration",
+                            "1",
+                            "--alert-latency",
+                            "100",
+                            "--alert-failure-rate",
+                            "5",
+                        ],
+                    )
+                    assert result.exit_code == 0
+                    assert "⚠️  Cloudflare: High latency" in result.output
+                    assert "⚠️  Google: High failure rate" in result.output
+
+
+def test_monitoring_log_finalized(tmp_path, runner, sample_results):
+    log_file = tmp_path / "monitor.log"
+    with patch(
+        "dns_benchmark.cli.ResolverManager.get_default_resolvers",
+        return_value=[{"name": "Cloudflare", "ip": "1.1.1.1"}],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.get_sample_domains",
+            return_value=["example.com"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark",
+                return_value=sample_results,
+            ):
+                with patch("time.sleep", return_value=None):
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "monitoring",
+                            "--use-defaults",
+                            "--interval",
+                            "1",
+                            "--duration",
+                            "1",
+                            "-o",
+                            str(log_file),
+                        ],
+                    )
+                    assert result.exit_code == 0
+                    text = log_file.read_text()
+                    assert "Monitoring started" in text
+                    assert "Monitoring ended" in text
+
+
+def test_monitoring_with_files(runner, sample_results, tmp_path):
+    """Ensure monitoring runs with --resolvers and --domains file inputs."""
+    resolver_file = tmp_path / "resolvers.json"
+    domain_file = tmp_path / "domains.txt"
+    log_file = tmp_path / "monitor.log"
+
+    # Write fake resolver and domain files
+    resolver_file.write_text(
+        json.dumps(
+            [
+                {"name": "Cloudflare", "ip": "1.1.1.1"},
+                {"name": "Google", "ip": "8.8.8.8"},
+            ]
+        )
+    )
+    domain_file.write_text("example.com\nexample.org")
+
+    with patch(
+        "dns_benchmark.cli.ResolverManager.load_resolvers_from_file",
+        return_value=[
+            {"name": "Cloudflare", "ip": "1.1.1.1"},
+            {"name": "Google", "ip": "8.8.8.8"},
+        ],
+    ):
+        with patch(
+            "dns_benchmark.cli.DomainManager.load_domains_from_file",
+            return_value=["example.com", "example.org"],
+        ):
+            with patch(
+                "dns_benchmark.cli.DNSQueryEngine.run_benchmark",
+                return_value=sample_results,
+            ):
+                with patch("time.sleep", return_value=None):
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "monitoring",
+                            "--resolvers",
+                            str(resolver_file),
+                            "--domains",
+                            str(domain_file),
+                            "--interval",
+                            "1",
+                            "--duration",
+                            "1",
+                            "-o",
+                            str(log_file),
+                        ],
+                    )
+                    assert result.exit_code == 0
+                    text = log_file.read_text()
+                    assert "Cloudflare" in text
+                    assert "Google" in text

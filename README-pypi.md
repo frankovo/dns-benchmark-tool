@@ -15,7 +15,14 @@ dns-benchmark benchmark --use-defaults
 
 > 🎉 **1,400+ downloads this week!** Thank you to our growing community.  
 
+**Real Time Tracking**
+
+![Real Time Tracking](https://raw.githubusercontent.com/frankovo/dns-benchmark-tool/main/docs/real_time_tracking.gif)
+*Watch DNS queries in motion*
+
 </div>
+
+---
 
 ## 🎉 Today’s Release Highlights ![new](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen&label=new)
 
@@ -27,7 +34,7 @@ We’ve added **three powerful CLI commands** to make DNS benchmarking even more
 
 ```bash
 # Quick resolver ranking
-dns-benchmark top --use-defaults
+dns-benchmark top
 
 # Compare resolvers side-by-side
 dns-benchmark compare Cloudflare Google Quad9 --show-details
@@ -37,8 +44,6 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
   --alert-latency 150 --alert-failure-rate 5 --output monitor.log
 ```
 
----
-
 [![CI Tests](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml)
 [![Publish to TestPyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml)
 [![Publish to PyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml)
@@ -46,7 +51,7 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
 
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen.svg)
+![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen.svg)
 
 [![Downloads](https://img.shields.io/pypi/dm/dns-benchmark-tool.svg?color=blueviolet)](https://pypi.org/project/dns-benchmark-tool/)
 [![GitHub stars](https://img.shields.io/github/stars/frankovo/dns-benchmark-tool.svg?style=social&label=Star)](https://github.com/frankovo/dns-benchmark-tool/stargazers)
@@ -97,7 +102,6 @@ DNS resolution can add 300ms+ to every request. This tool helps you find the fas
 
 ✅ Multiple formats supported: CSV, Excel, PDF, JSON.  
 ✅ Visual reports with charts and graphs in PDF/Excel.  
-✅ Domain statistics via `--domain-stats` for per-domain analysis.  
 ✅ Record type statistics (`--record-type-stats`) compare A, AAAA, MX, etc.  
 ✅ Error breakdown (`--error-breakdown`) highlights problematic resolvers.  
 
@@ -120,6 +124,10 @@ DNS resolution can add 300ms+ to every request. This tool helps you find the fas
 
 ```bash
 pip install dns-benchmark-tool
+
+#Verify Installation
+dns-benchmark --version
+dns-benchmark --help
 ```
 
 ## Quick usage
@@ -315,7 +323,7 @@ Quickly rank resolvers by speed and reliability.
 
 ```bash
 # Rank resolvers quickly
-dns-benchmark top --use-defaults
+dns-benchmark top
 
 # Use custom domain list
 dns-benchmark top -d domains.txt
@@ -368,7 +376,7 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
 
 | Command      | Purpose | Typical Use Case | Key Options | Output |
 |--------------|---------|------------------|-------------|--------|
-| **top**      | Quick ranking of resolvers by speed and reliability | Fast check to see which resolver is best right now | `--domains`, `--record-types`, `--iterations`, `--output` | Sorted list of resolvers with latency & success rate |
+| **top**      | Quick ranking of resolvers by speed and reliability | Fast check to see which resolver is best right now | `--domains`, `--record-types`, `--output` | Sorted list of resolvers with latency & success rate |
 | **compare**  | Side‑by‑side comparison of specific resolvers | Detailed benchmarking across chosen resolvers/domains | `--domains`, `--record-types`, `--iterations`, `--output`, `--show-details` | Table of resolvers with latency, success rate, per‑domain breakdown |
 | **monitoring** | Continuous monitoring with alerts | Real‑time tracking of resolver performance over time | `--interval`, `--duration`, `--alert-latency`, `--alert-failure-rate`, `--output`, `--use-defaults` | Live status indicators, alerts, optional log file |
 

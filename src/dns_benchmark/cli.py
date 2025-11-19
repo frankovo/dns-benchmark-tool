@@ -764,7 +764,7 @@ def top(
         for name, stats in resolver_stats.items():
             if metric == "latency":
                 if stats.successful_queries > 0 and stats.avg_latency is not None:
-                    score = stats.avg_latency
+                    score = -stats.avg_latency
                 else:
                     score = float("-inf")  # push failed resolvers to bottom
 

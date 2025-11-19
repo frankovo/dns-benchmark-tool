@@ -15,17 +15,26 @@ dns-benchmark benchmark --use-defaults
 > 🎉 **1,400+ downloads this week!** Thank you to our growing community.  
 > 📢 **Want multi-region testing?** [Join the waitlist →](https://buildtools.net)
 
+**Real Time Tracking**
+
+[![Real Time Tracking](docs/real_time_tracking.gif)](https://github.com/frankovo/dns-benchmark-tool)
+*Watch DNS queries in motion*
+
+</div>
+
 ## 🎉 Today’s Release Highlights ![new](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen&label=new)
 
 We’ve added **three powerful CLI commands** to make DNS benchmarking even more versatile:
 
 - 🚀 **top** — quick ranking of resolvers by speed and reliability  
+
 - 📊 **compare** — side‑by‑side benchmarking with detailed statistics and export options  
+
 - 🔄 **monitoring** — continuous performance tracking with alerts and logging  
 
 ```bash
 # Quick resolver ranking
-dns-benchmark top --use-defaults
+dns-benchmark top
 
 # Compare resolvers side-by-side
 dns-benchmark compare Cloudflare Google Quad9 --show-details
@@ -35,8 +44,6 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
   --alert-latency 150 --alert-failure-rate 5 --output monitor.log
 ```
 
-</div>
-
 ---
 [![CI Tests](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/test.yml)
 [![Publish to TestPyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml)
@@ -45,7 +52,7 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
 
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen.svg)
+![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen.svg)
 
 [![Downloads](https://img.shields.io/pypi/dm/dns-benchmark-tool.svg?color=blueviolet)](https://pypi.org/project/dns-benchmark-tool/)
 [![GitHub stars](https://img.shields.io/github/stars/frankovo/dns-benchmark-tool.svg?style=social&label=Star)](https://github.com/frankovo/dns-benchmark-tool/stargazers)
@@ -94,7 +101,7 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
     - [Feedback](#feedback)
     - [Risolver management](#risolver-management)
     - [Domain management](#domain-management)
-      - [Category overview](#category-overview)
+    - [Category overview](#category-overview)
     - [Configuration management](#configuration-management)
   - [Complete usage guide](#complete-usage-guide)
     - [Quick performance test](#quick-performance-test)
@@ -108,10 +115,10 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
   - [⚡ CLI Commands](#-cli-commands)
     - [🚀 Top](#-top)
     - [📊 Compare](#-compare)
-  - [🔄 Monitoring](#-monitoring)
+    - [🔄 Monitoring](#-monitoring)
     - [🌟 Command Showcase](#-command-showcase)
-    - [📊 Analysis Enhancements](#-analysis-enhancements)
-    - [⚡ Best Practices](#-best-practices)
+  - [📊 Analysis Enhancements](#-analysis-enhancements)
+  - [⚡ Best Practices](#-best-practices)
   - [Feedback \& Community Input](#feedback--community-input)
     - [Feedback Command](#feedback-command)
     - [Smart Feedback Prompts](#smart-feedback-prompts)
@@ -797,7 +804,7 @@ dns-benchmark list-domains --format csv
 dns-benchmark list-domains --format json
 ```
 
-#### Category overview
+### Category overview
 
 ```bash
 # View all available categories
@@ -973,11 +980,12 @@ dns-benchmark benchmark \
 The DNS Benchmark Tool now includes three specialized commands for different workflows:
 
 ### 🚀 Top
+
 Quickly rank resolvers by speed and reliability.
 
 ```bash
 # Rank resolvers quickly
-dns-benchmark top --use-defaults
+dns-benchmark top
 
 # Use custom domain list
 dns-benchmark top -d domains.txt
@@ -989,6 +997,7 @@ dns-benchmark top -o results.json
 ---
 
 ### 📊 Compare
+
 Benchmark resolvers side‑by‑side with detailed statistics.
 
 ```bash
@@ -1007,7 +1016,7 @@ dns-benchmark compare Cloudflare Google -o results.csv
 
 ---
 
-## 🔄 Monitoring
+### 🔄 Monitoring
 
 Continuously monitor resolver performance with alerts.
 
@@ -1029,13 +1038,13 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
 
 | Command      | Purpose | Typical Use Case | Key Options | Output |
 |--------------|---------|------------------|-------------|--------|
-| **top**      | Quick ranking of resolvers by speed and reliability | Fast check to see which resolver is best right now | `--domains`, `--record-types`, `--iterations`, `--output` | Sorted list of resolvers with latency & success rate |
+| **top**      | Quick ranking of resolvers by speed and reliability | Fast check to see which resolver is best right now | `--domains`, `--record-types`, `--output` | Sorted list of resolvers with latency & success rate |
 | **compare**  | Side‑by‑side comparison of specific resolvers | Detailed benchmarking across chosen resolvers/domains | `--domains`, `--record-types`, `--iterations`, `--output`, `--show-details` | Table of resolvers with latency, success rate, per‑domain breakdown |
 | **monitoring** | Continuous monitoring with alerts | Real‑time tracking of resolver performance over time | `--interval`, `--duration`, `--alert-latency`, `--alert-failure-rate`, `--output`, `--use-defaults` | Live status indicators, alerts, optional log file |
 
 ---
 
-### 📊 Analysis Enhancements
+## 📊 Analysis Enhancements
 
 - **Iteration count**: displayed when more than one iteration is run.  
 - **Cache hits**: shows how many queries were served from cache (when `--use-cache` is enabled).  
@@ -1058,7 +1067,7 @@ Iterations: 3
 Cache hits: 40 (26.7%)
 ```
 
-### ⚡ Best Practices
+## ⚡ Best Practices
 
 | Mode            | Recommended Flags                                                                 | Purpose                                                                 |
 |-----------------|------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
@@ -1372,6 +1381,9 @@ Place images in `docs/screenshots/`:
 - `docs/screenshots/cli_run.png`
 - `docs/screenshots/excel_report.png`
 - `docs/screenshots/pdf_summary.png`
+- `docs/screenshots/pdf_charts.png`
+- `docs/screenshots/excel_charts.png`
+- `docs/screenshots/real_time_monitoring.png`
 
 ### 1. CLI Benchmark Run
 
