@@ -1,3 +1,10 @@
+## v0.3.0 (2025-11-19)
+
+### Feat
+
+- **cli**: full test coverage and readme refactor
+- **cli**: add top, compare, and monitoring commands
+
 ## v0.2.9 (2025-11-17)
 
 ### Feat
