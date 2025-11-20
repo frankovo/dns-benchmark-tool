@@ -1,3 +1,9 @@
+## v0.3.1 (2025-11-20)
+
+### Refactor
+
+- **pyproject.toml-cli.py-analysis.py-readme.md-readme-pypi.md**: - removed unnecessary dependency from core requirements - cleaned up comments in pyproject.toml, cli.py, and analysis.py - added new explanatory comments for optional dependencies and cli analysis routines - updated readme.md and readme-pypi.md with consistent description, badges, and reports section - ensured metadata and docs are aligned with supported python versions (3.9–3.12)
+
 ## v0.3.0 (2025-11-19)
 
 ### Feat
