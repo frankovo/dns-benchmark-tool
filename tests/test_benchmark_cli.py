@@ -92,15 +92,18 @@ def test_benchmark_exports_csv_excel_pdf_json(tmp_path, sample_results):
         "dns_benchmark.core.DNSQueryEngine.run_benchmark", return_value=sample_results
     ):
         # Also patch default resolvers/domains to keep totals small
-        with patch(
-            "dns_benchmark.core.ResolverManager.get_default_resolvers",
-            return_value=[
-                {"name": "Cloudflare", "ip": "1.1.1.1"},
-                {"name": "Google", "ip": "8.8.8.8"},
-            ],
-        ), patch(
-            "dns_benchmark.core.DomainManager.get_sample_domains",
-            return_value=["example.com", "bad-domain.test"],
+        with (
+            patch(
+                "dns_benchmark.core.ResolverManager.get_default_resolvers",
+                return_value=[
+                    {"name": "Cloudflare", "ip": "1.1.1.1"},
+                    {"name": "Google", "ip": "8.8.8.8"},
+                ],
+            ),
+            patch(
+                "dns_benchmark.core.DomainManager.get_sample_domains",
+                return_value=["example.com", "bad-domain.test"],
+            ),
         ):
             result = runner.invoke(
                 cli,

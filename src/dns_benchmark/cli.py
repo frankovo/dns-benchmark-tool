@@ -278,7 +278,7 @@ def reset_feedback() -> None:
     click.echo(click.style("✓ Feedback state reset", fg="green"))
 
 
-# Benchmark command
+# =================== Benchmark command
 @cli.command()
 @click.option("--resolvers", "-r", help="JSON file with resolver list")
 @click.option("--domains", "-d", help="Text file with domain list")
@@ -318,7 +318,6 @@ def reset_feedback() -> None:
 @click.option(
     "--include-charts", is_flag=True, help="Include charts in Excel and PDF exports"
 )
-# =================== Benchmark
 def benchmark(
     resolvers: Optional[str],
     domains: Optional[str],
@@ -622,6 +621,7 @@ def benchmark(
         show_feedback_prompt()
 
 
+# ====================== Top Resolvers Command
 @cli.command()
 @click.option("--limit", "-n", default=10, help="Number of top resolvers to display")
 @click.option(
@@ -649,7 +649,6 @@ def benchmark(
     "--output", "-o", help="Optional: save results to file (supports .txt, .json, .csv)"
 )
 @click.option("--quiet", is_flag=True, help="Suppress progress output")
-# ====================== Top
 def top(
     limit: int,
     metric: str,
@@ -930,8 +929,6 @@ def top(
 
 
 # ======================= Compare
-
-
 @cli.command()
 @click.argument("resolvers", nargs=-1, required=True)
 @click.option("--domains", "-d", help="Text file with domain list")
@@ -1191,6 +1188,7 @@ def compare(
         raise
 
 
+# ==================== Monitoring Command
 @cli.command()
 @click.option("--resolvers", "-r", help="JSON file with resolver list")
 @click.option("--domains", "-d", help="Text file with domain list")
@@ -1219,7 +1217,6 @@ def compare(
 @click.option(
     "--use-defaults", is_flag=True, help="Use default resolvers and sample domains"
 )
-# ==================== Monitoring
 def monitoring(
     resolvers: Optional[str],
     domains: Optional[str],
@@ -1389,6 +1386,7 @@ def monitoring(
             click.echo(success(f"Monitoring log saved to: {output}"))
 
 
+# ===================== List Defaults Command
 @cli.command()
 def list_defaults() -> None:
     """List default resolvers and sample domains."""
@@ -1404,6 +1402,7 @@ def list_defaults() -> None:
     return None
 
 
+# ===================== List Resolvers Command
 @cli.command()
 @click.option("--category", "-c", help="Filter by category")
 @click.option(
@@ -1516,6 +1515,7 @@ def list_resolvers(category: Optional[str], format: str, details: bool) -> None:
     click.echo(summary_box(summary_lines))
 
 
+# ====================== List Domains Command
 @cli.command()
 @click.option("--category", "-c", help="Filter by category")
 @click.option(
@@ -1593,6 +1593,7 @@ def list_domains(category: Optional[str], format: str, count: Optional[int]) -> 
     click.echo(summary_box(summary_lines))
 
 
+# ======================= List Categories Command
 @cli.command()
 def list_categories() -> None:
     """Show all available resolver and domain categories"""
@@ -1626,6 +1627,7 @@ def list_categories() -> None:
     click.echo(summary_box(summary_lines))
 
 
+#  ====================== Generate Config Command
 @cli.command()
 @click.option("--category", "-c", help="Generate config for specific category")
 @click.option("--output", "-o", help="Output file path")

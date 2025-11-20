@@ -1,10 +1,8 @@
-<div align="center">
-
-# DNS Benchmark Tool
-
-**Fast, comprehensive DNS performance testing**
-
-Part of [BuildTools](https://buildtools.net) - Network Performance Suite
+<p align="center">
+  <h1>DNS Benchmark Tool</h1>
+  <strong>Fast, comprehensive DNS performance testing</strong><br>
+  Part of <a href="https://buildtools.net">BuildTools</a> - Network Performance Suite
+</p>
 
 ```bash
 pip install dns-benchmark-tool
@@ -15,14 +13,16 @@ dns-benchmark benchmark --use-defaults
 
 > 🎉 **1,400+ downloads this week!** Thank you to our growing community.  
 
-**Real Time Tracking**
-
-![Real Time Tracking](https://raw.githubusercontent.com/frankovo/dns-benchmark-tool/main/docs/real_time_tracking.gif)
-*Watch DNS queries in motion*
-
-</div>
+</p>
 
 ---
+
+<p align="center">
+  <strong>Real Time Tracking</strong> <br>
+  <img src="https://raw.githubusercontent.com/frankovo/dns-benchmark-tool/main/docs/real_time_tracking.gif" alt="Real Time Tracking">
+  <br>
+  <span>Watch DNS queries in motion</span>
+</p>
 
 ## 🎉 Today’s Release Highlights ![new](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen&label=new)
 
@@ -48,8 +48,8 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
 [![Publish to TestPyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/testpypi.yml)
 [![Publish to PyPI](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml/badge.svg)](https://github.com/frankovo/dns-benchmark-tool/actions/workflows/pypi.yml)
 [![PyPI version](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen)](https://pypi.org/project/dns-benchmark-tool/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/dns-benchmark-tool.svg)](https://pypi.org/project/dns-benchmark-tool/)
 
-![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen.svg)
 

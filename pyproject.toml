@@ -5,13 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dns-benchmark-tool"
 version = "0.3.0"
-description = "Benchmark DNS resolvers across domains and record types with analytics and reports (CSV, Excel, PDF, JSON)."
-readme = "README-pypi.md"
+description = "Fast, comprehensive DNS performance testing with DNSSEC validation, DoH/DoT support, and enterprise features."
+readme = { file = "README-pypi.md", content-type = "text/markdown" }
 authors = [
     { name = "Joseph Oseh Frank", email = "frank@osehfrank.com" }
 ]
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.13"
+keywords = ["DNS", "benchmark", "performance", "DNSSEC", "DoH", "DoT", "networking", "latency", "resolver", "metrics"]
 
 dependencies = [
     "dnspython>=2.7,<3.0",       
@@ -26,7 +27,6 @@ dependencies = [
     "pyyaml>=6.0,<7.0",          
     "tqdm>=4.66,<5.0",           
     "matplotlib>=3.8,<4.0",
-    "seaborn>=0.13.2,<0.14.0",
     "pillow>=11.0.0,<12.0.0"
 ]
 
@@ -37,12 +37,14 @@ classifiers = [
     "Topic :: Internet :: Name Service (DNS)",
     "Topic :: System :: Networking",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.12"
 ]
 
 [project.urls]
@@ -50,6 +52,7 @@ Homepage = "https://github.com/frankovo/dns-benchmark-tool"
 Documentation = "https://github.com/frankovo/dns-benchmark-tool#readme"
 Source = "https://github.com/frankovo/dns-benchmark-tool"
 Tracker = "https://github.com/frankovo/dns-benchmark-tool/issues"
+Changelog = "https://github.com/frankovo/dns-benchmark-tool/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -63,7 +66,6 @@ dev = [
     "pytest-asyncio>=0.23,<2.0",
     "commitizen>=3.0,<5.0",
 ]
-
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -88,7 +90,7 @@ strict = true
 
 [tool.black]
 line-length = 88
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py39", "py310", "py311", "py312"]
 
 [tool.isort]
 profile = "black"

@@ -7,16 +7,19 @@ from dns_benchmark.cli import cli
 
 def test_list_defaults():
     runner = CliRunner()
-    with patch(
-        "dns_benchmark.core.ResolverManager.get_default_resolvers",
-        return_value=[
-            {"name": "Cloudflare", "ip": "1.1.1.1"},
-        ],
-    ), patch(
-        "dns_benchmark.core.DomainManager.get_sample_domains",
-        return_value=[
-            "example.com",
-        ],
+    with (
+        patch(
+            "dns_benchmark.core.ResolverManager.get_default_resolvers",
+            return_value=[
+                {"name": "Cloudflare", "ip": "1.1.1.1"},
+            ],
+        ),
+        patch(
+            "dns_benchmark.core.DomainManager.get_sample_domains",
+            return_value=[
+                "example.com",
+            ],
+        ),
     ):
         result = runner.invoke(cli, ["list-defaults"])
         assert result.exit_code == 0
