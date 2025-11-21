@@ -1,3 +1,9 @@
+## v0.3.2 (2025-11-21)
+
+### Refactor
+
+- **readme-readme-pypi-test_cli_commands**: readme restructuring and test_cli_commands.py optimization
+
 ## v0.3.1 (2025-11-20)
 
 ### Refactor
