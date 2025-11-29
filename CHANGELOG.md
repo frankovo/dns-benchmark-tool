@@ -1,3 +1,9 @@
+## v0.3.3 (2025-11-29)
+
+### Fix
+
+- **cli,exporters,docs**: make weasyprint optional and update pdf setup instructions
+
 ## v0.3.2 (2025-11-21)
 
 ### Refactor
