@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dns-benchmark-tool"
-version = "0.3.2"
+version = "0.3.3"
 description = "Fast, comprehensive DNS performance testing with DNSSEC validation, DoH/DoT support, and enterprise features."
 readme = { file = "README-pypi.md", content-type = "text/markdown" }
 authors = [
@@ -110,7 +110,7 @@ addopts = "-ra -q"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.3.2"
+version = "0.3.3"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",
