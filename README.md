@@ -107,6 +107,15 @@ dns-benchmark monitoring --use-defaults --formats csv,excel --interval 30 --dura
   - [📖 Usage Examples](#-usage-examples)
     - [Basic Usage](#basic-usage)
     - [Advanced Usage](#advanced-usage)
+  - [Inline input support for resolvers and domains](#inline-input-support-for-resolvers-and-domains)
+    - [New capabilities](#new-capabilities)
+    - [Backward compatibility](#backward-compatibility)
+    - [Usage Examples](#usage-examples)
+      - [Before (Only files worked)](#before-only-files-worked)
+      - [After (Both work)](#after-both-work)
+      - [Named resolvers](#named-resolvers)
+      - [Mixed input](#mixed-input)
+      - [Single](#single)
   - [🔧 Utilities](#-utilities)
     - [Feedback](#feedback)
     - [Risolver management](#risolver-management)
@@ -773,6 +782,94 @@ dns-benchmark monitoring --use-defaults --interval 30 --duration 3600 \
 ⚠️ **Note for new commands:** Resolvers with no successful queries are excluded from ranking and will display `Avg Latency: N/A`.
 
 ---
+
+## Inline input support for resolvers and domains
+
+This patch introduces full support for comma‑separated inline values for the
+`--resolvers` and `--domains` flags, fixing issue [#39](https://github.com/frankovo/dns-benchmark-tool/issues/39) and improving cli usability without breaking any existing workflows.
+
+### New capabilities
+
+1. **inline resolvers**: `--resolvers "1.1.1.1,8.8.8.8,9.9.9.9"`
+2. **inline domains**: `--domains "google.com,github.com"`
+3. **single values**: `--resolvers "1.1.1.1"` or `--domains "google.com"`
+4. **named resolvers**: `--resolvers "cloudflare,google,quad9"`
+5. **mixed input**: `--resolvers "1.1.1.1,cloudflare,8.8.8.8"`
+
+### Backward compatibility
+
+- all existing file‑based configurations continue to work
+- no breaking changes to the cli
+- file detection takes priority over inline parsing
+
+### Usage Examples
+
+#### Before (Only files worked)
+
+```bash
+dns-benchmark benchmark \
+    --resolvers data/resolvers.json \
+    --domains data/domains.txt
+```
+
+#### After (Both work)
+
+```bash
+# Inline (New)
+dns-benchmark benchmark \
+    --resolvers "1.1.1.1,8.8.8.8,9.9.9.9" \
+    --domains "google.com,github.com" \
+    --timeout 10 \
+    --retries 3 \
+    --formats csv \
+    --output ./troubleshooting
+
+# Files (STILL WORKS)
+dns-benchmark benchmark \
+    --resolvers data/resolvers.json \
+    --domains data/domains.txt \
+    --formats csv
+```
+
+#### Named resolvers
+
+```bash
+# Named resolvers
+dns-benchmark benchmark \
+    --resolvers "Cloudflare,Google,Quad9" \
+    --domains "google.com,github.com" \
+    --timeout 10 \
+    --retries 3 \
+    --formats csv \
+    --output ./troubleshooting_named
+```
+
+#### Mixed input
+
+```bash
+# Mixed input
+dns-benchmark benchmark \
+    --resolvers "1.1.1.1,Cloudflare,8.8.8.8" \
+    --domains "google.com,github.com" \
+    --timeout 10 \
+    --retries 3 \
+    --formats csv \
+    --output ./troubleshooting_mixed
+```
+
+#### Single
+
+```bash
+
+# Single
+dns-benchmark benchmark \
+    --resolvers "1.1.1.1" \
+    --domains "google.com" \
+    --timeout 10 \
+    --retries 3 \
+    --formats csv \
+    --output ./troubleshooting
+```
 
 ## 🔧 Utilities
 
