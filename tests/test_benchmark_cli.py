@@ -257,13 +257,13 @@ def test_cli_domain_file_not_found(monkeypatch):
 
     # Make resolver loading succeed
     monkeypatch.setattr(
-        "dns_benchmark.cli.ResolverManager.load_resolvers_from_file",
+        "dns_benchmark.cli.ResolverManager.parse_resolvers_input",
         lambda path: [{"name": "Google", "ip": "8.8.8.8"}],
     )
 
     # Force domain loading to raise FileNotFoundError
     monkeypatch.setattr(
-        "dns_benchmark.cli.DomainManager.load_domains_from_file",
+        "dns_benchmark.cli.DomainManager.parse_domains_input",
         lambda path: (_ for _ in ()).throw(FileNotFoundError("missing.txt")),
     )
 
@@ -278,13 +278,13 @@ def test_cli_domain_generic_error(monkeypatch):
 
     # Make resolver loading succeed
     monkeypatch.setattr(
-        "dns_benchmark.cli.ResolverManager.load_resolvers_from_file",
+        "dns_benchmark.cli.ResolverManager.parse_resolvers_input",
         lambda path: [{"name": "Google", "ip": "8.8.8.8"}],
     )
 
     # Force domain loading to raise generic Exception
     monkeypatch.setattr(
-        "dns_benchmark.cli.DomainManager.load_domains_from_file",
+        "dns_benchmark.cli.DomainManager.parse_domains_input",
         lambda path: (_ for _ in ()).throw(Exception("boom")),
     )
 

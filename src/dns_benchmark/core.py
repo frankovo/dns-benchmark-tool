@@ -1,17 +1,20 @@
 """Core DNS benchmarking functionality."""
 
 import asyncio
+import ipaddress
 import json
 import time
 import uuid
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, cast
 
 import click
 import dns.asyncresolver
 import dns.exception
+import idna
 
 from dns_benchmark.utils.messages import warning
 
@@ -683,6 +686,149 @@ class ResolverManager:
     ]
 
     @staticmethod
+    def _match_resolver_name(resolver: Dict[str, Any], target: str) -> bool:
+        """Check if resolver name matches target (handles both str and Sequence[str])."""
+        name_val = resolver.get("name", "")
+        if isinstance(name_val, str):
+            return name_val.lower() == target.lower()
+        elif isinstance(name_val, (list, tuple)) and name_val:
+            first_item = name_val[0]
+            if isinstance(first_item, str):
+                return first_item.lower() == target.lower()
+        return False
+
+    @staticmethod
+    def parse_resolver_string(resolver_string: str) -> List[Dict[str, str]]:
+        """
+        Parse comma-separated resolver IPs/names into resolver list.
+
+        Supports:
+        - IP addresses: "1.1.1.1,8.8.8.8"
+        - IPv6 addresses: "2606:4700:4700::1111,2001:4860:4860::8888"
+        - Named resolvers from database: "Cloudflare,Google"
+        - Mixed: "1.1.1.1,Cloudflare"
+
+        Args:
+            resolver_string: Comma-separated resolver identifiers
+
+        Returns:
+            List of resolver dictionaries with 'name' and 'ip' keys
+        """
+        resolvers = []
+
+        # Split by comma and clean whitespace
+        parts: List[str] = [
+            part.strip() for part in resolver_string.split(",") if part.strip()
+        ]
+
+        for part in parts:
+            # Try IP detection (IPv4 or IPv6)
+            try:
+                ip_obj = ipaddress.ip_address(part)
+                resolvers.append({"name": part, "ip": str(ip_obj)})
+                continue
+            except ValueError:
+                pass
+
+            # Try name lookup in database
+            match = next(
+                (
+                    r
+                    for r in ResolverManager.RESOLVERS_DATABASE
+                    if ResolverManager._match_resolver_name(r, part)
+                ),
+                None,
+            )
+            if match:
+                name_val = match["name"]
+                ip_val = match["ip"]
+                # Handle case where values might be sequences
+                name_str = (
+                    name_val[0]
+                    if isinstance(name_val, (list, tuple))
+                    else str(name_val)
+                )
+                ip_str = ip_val[0] if isinstance(ip_val, (list, tuple)) else str(ip_val)
+                resolvers.append({"name": name_str, "ip": ip_str})
+                continue
+
+            # Fallback: treat as hostname or custom label
+            resolvers.append({"name": part, "ip": part})
+
+        return resolvers
+
+    @staticmethod
+    def parse_resolvers_input(input_value: Optional[str]) -> List[Dict[str, str]]:
+        """
+        Smart parser that handles both file paths and comma-separated inline values.
+
+        Detection logic:
+        1. If input contains comma and no file extension -> treat as comma-separated
+        2. If file exists at path -> load from file
+        3. If input looks like single IP -> treat as single resolver
+        4. Otherwise -> try as file path (will raise FileNotFoundError if not found)
+
+        Args:
+            input_value: File path or comma-separated resolver string
+
+        Returns:
+            List of resolver dictionaries
+
+        Raises:
+            FileNotFoundError: If file path is invalid
+            json.JSONDecodeError: If JSON file is malformed
+            ValueError: If resolver input is invalid
+        """
+        if not input_value:
+            raise ValueError("Resolver input cannot be empty")
+
+        input_value = input_value.strip()
+
+        # Check if it's a file path that exists
+        path = Path(input_value)
+        if path.exists() and path.is_file():
+            return ResolverManager.load_resolvers_from_file(str(path))
+
+        # Check if it contains comma (likely inline list)
+        if "," in input_value:
+            return ResolverManager.parse_resolver_string(input_value)
+
+        # Check if it looks like a single IP address
+        try:
+            ip_obj = ipaddress.ip_address(input_value)
+            return [{"name": input_value, "ip": str(ip_obj)}]
+        except ValueError:
+            pass
+
+        # Check if it's a resolver name from database
+        match = next(
+            (
+                r
+                for r in ResolverManager.RESOLVERS_DATABASE
+                if ResolverManager._match_resolver_name(r, input_value)
+            ),
+            None,
+        )
+        if match:
+            name_val = match["name"]
+            ip_val = match["ip"]
+            # Handle case where values might be sequences
+            name_str = (
+                name_val[0] if isinstance(name_val, (list, tuple)) else str(name_val)
+            )
+            ip_str = ip_val[0] if isinstance(ip_val, (list, tuple)) else str(ip_val)
+            return [{"name": name_str, "ip": ip_str}]
+
+        # Last resort: try as file path (will raise FileNotFoundError)
+        if not Path(input_value).exists():
+            raise ValueError(
+                f"Invalid resolver input: '{input_value}' is not a valid IP address, "
+                f"resolver name, or existing file path"
+            )
+
+        return ResolverManager.load_resolvers_from_file(input_value)
+
+    @staticmethod
     def get_default_resolvers() -> List[Dict[str, str]]:
         """Get a list of commonly used public resolvers."""
         return [
@@ -1083,6 +1229,93 @@ class DomainManager:
             "country": "Australia",
         },
     ]
+
+    @staticmethod
+    def parse_domain_string(domain_string: str) -> List[str]:
+        """
+        Parse comma-separated domain names into domain list.
+
+        Supports:
+        - Domain names: "google.com,github.com,example.com"
+        - Domains with whitespace: "google.com, github.com, example.com"
+        - Mixed case: "Google.com,GitHub.com"
+
+        Args:
+            domain_string: Comma-separated domain names
+
+        Returns:
+            List of domain strings (lowercased and cleaned)
+        """
+        domains = []
+        seen = set()
+
+        # Split by comma and clean whitespace
+        parts = [
+            part.strip().lower() for part in domain_string.split(",") if part.strip()
+        ]
+
+        for part in parts:
+            # Remove trailing dot (FQDN normalization)
+            part = part.rstrip(".")
+
+            # Normalize IDN → punycode if possible
+            try:
+                part = idna.encode(part).decode("ascii")
+            except idna.IDNAError:
+                pass  # keep original if invalid IDN
+
+            # Basic permissive validation (keep even if odd-looking)
+            if "." in part and len(part) > 3:
+                cleaned = part
+            else:
+                cleaned = part  # still include; DNS resolver will decide
+
+            # Deduplicate while preserving order
+            if cleaned not in seen:
+                seen.add(cleaned)
+                domains.append(cleaned)
+        return domains
+
+    @staticmethod
+    def parse_domains_input(input_value: Optional[str]) -> List[str]:
+        """
+        Smart parser that handles both file paths and comma-separated inline values.
+
+        Detection logic:
+        1. If input contains comma -> treat as comma-separated
+        2. If file exists at path -> load from file
+        3. If input looks like single domain -> treat as single domain
+        4. Otherwise -> try as file path (will raise FileNotFoundError if not found)
+
+        Args:
+            input_value: File path or comma-separated domain string
+
+        Returns:
+            List of domain strings
+
+        Raises:
+            FileNotFoundError: If file path is invalid
+        """
+        if not input_value:
+            raise ValueError("Domain input cannot be empty")
+
+        input_value = input_value.strip()
+
+        # Check if it's a file path that exists
+        path = Path(input_value)
+        if path.exists() and path.is_file():
+            return DomainManager.load_domains_from_file(str(path))
+
+        # Check if it contains comma (likely inline list)
+        if "," in input_value:
+            return DomainManager.parse_domain_string(input_value)
+
+        # Check if it looks like a single domain (has a dot)
+        if "." in input_value:
+            return [input_value.lower().strip()]
+
+        # Last resort: try as file path (will raise FileNotFoundError)
+        return DomainManager.load_domains_from_file(input_value)
 
     @staticmethod
     def get_sample_domains() -> List[str]:

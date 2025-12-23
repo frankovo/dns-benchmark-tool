@@ -341,6 +341,8 @@ def benchmark(
 ) -> None:
     """Run DNS benchmark test."""
 
+    print(f"DEBUG benchmark(): resolvers = {repr(resolvers)}")
+
     feedback_manager = FeedbackManager()
     benchmark_started = False
 
@@ -378,7 +380,7 @@ def benchmark(
                     success(f"Using default resolvers ({len(resolver_list)} resolvers)")
                 )
         else:
-            resolver_list = ResolverManager.load_resolvers_from_file(
+            resolver_list = ResolverManager.parse_resolvers_input(
                 resolvers if resolvers else ""
             )
             if not quiet:
@@ -399,9 +401,7 @@ def benchmark(
                     success(f"Using sample domains ({len(domain_list)} domains)")
                 )
         else:
-            domain_list = DomainManager.load_domains_from_file(
-                domains if domains else ""
-            )
+            domain_list = DomainManager.parse_domains_input(domains if domains else "")
             if not quiet:
                 click.echo(success(f"Loaded {len(domain_list)} domains"))
     except FileNotFoundError as e:
