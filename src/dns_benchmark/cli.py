@@ -337,11 +337,9 @@ def benchmark(
     warmup: bool,
     warmup_fast: bool,
     use_cache: bool,
-    include_charts: bool,  # NEW
+    include_charts: bool,
 ) -> None:
     """Run DNS benchmark test."""
-
-    print(f"DEBUG benchmark(): resolvers = {repr(resolvers)}")
 
     feedback_manager = FeedbackManager()
     benchmark_started = False
