@@ -1,3 +1,9 @@
+## v0.3.4 (2025-12-23)
+
+### Feat
+
+- **cli.py,-core.py,-readme**: improve resolver/domain parsing, add idn support and dedupe logic
+
 ## v0.3.3 (2025-11-29)
 
 ### Fix
