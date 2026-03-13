@@ -2,21 +2,23 @@
     gpg-check release-patch release-minor release-major release-tag release-tag-dry \
     release-check release-flow release-clean release-build release-info release-status cz-commit cz-changelog cz-bump
 
+PIP=pip
+
 # 🔧 Install package (runtime only)
 install:
-	pip install .
+	$(PIP) install .
 
 # 🔧 Install package with dev extras (pytest, mypy, flake8, black, isort, etc.)
 install-dev:
-	pip install .[dev]
+	$(PIP) install .[dev]
 
 #  🔧 Install package with PDF extras (weasyprint)
 install-pdf:
-	pip install .[pdf]
+	$(PIP) install .[pdf]
 
 # 🔧 Uninstall package
 uninstall:
-	pip uninstall -y dns-benchmark-tool \
+	$(PIP) uninstall -y dns-benchmark-tool \
 	dnspython pandas aiohttp click pyfiglet colorama Jinja2 openpyxl pyyaml tqdm matplotlib \
     mypy black flake8 autopep8 pytest coverage isort
 
