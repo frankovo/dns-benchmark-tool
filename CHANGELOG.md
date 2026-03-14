@@ -1,3 +1,10 @@
+## v0.3.5 (2026-03-14)
+
+### Fix
+
+- **makefile**: finalize PIP variable integration and align with previous patch
+- **core**: fix inflated latency for blocked/sinkholed domains (issue #45)
+
 ## v0.3.4 (2025-12-23)
 
 ### Feat
