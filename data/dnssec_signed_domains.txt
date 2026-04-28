@@ -1,0 +1,6 @@
+# DNSSEC-signed domains for testing resolver validation capabilities
+cloudflare.com
+isc.org
+nlnetlabs.nl
+dnssec-tools.org
+ietf.org

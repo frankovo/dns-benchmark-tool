@@ -16,6 +16,7 @@ from dns_benchmark.analysis import BenchmarkAnalyzer
 from dns_benchmark.core import (
     DNSQueryEngine,
     DomainManager,
+    QueryProtocol,
     QueryStatus,
     ResolverManager,
 )
@@ -36,6 +37,67 @@ from dns_benchmark.utils.messages import (
 
 # Initialize colorama
 init()
+
+
+def _resolve_protocol_and_doh_urls(
+    doh: bool,
+    dot: bool,
+    doh_url: Optional[str],
+    resolvers: List[Dict[str, str]],
+) -> Tuple[QueryProtocol, Dict[str, str]]:
+    """
+    Validate protocol flags and build resolver_ip -> doh_url mapping.
+    Fails fast with a clear message before any queries run.
+    """
+
+    if doh and dot:
+        raise click.UsageError("--doh and --dot are mutually exclusive.")
+
+    if not doh and not dot:
+        return QueryProtocol.PLAIN, {}
+
+    if dot:
+        return QueryProtocol.DOT, {}
+
+    # ── DoH path ──────────────────────────────────────────────────────────
+    url_map: Dict[str, str] = {}
+
+    if doh_url:
+        # User supplied explicit list — must match resolver count 1:1
+        urls = [u.strip() for u in doh_url.split(",") if u.strip()]
+        if len(urls) != len(resolvers):
+            raise click.UsageError(
+                f"--doh-url has {len(urls)} URL(s) but --resolvers has "
+                f"{len(resolvers)} resolver(s). Counts must match."
+            )
+        for resolver, url in zip(resolvers, urls):
+            url_map[resolver["ip"]] = url
+    else:
+        # Fall back to db doh_url field — fail if any resolver is missing it
+        missing = []
+        for resolver in resolvers:
+            db_entry = next(
+                (
+                    r
+                    for r in ResolverManager.RESOLVERS_DATABASE
+                    if r.get("ip") == resolver["ip"]
+                    or str(r.get("name", "")).lower() == resolver["name"].lower()
+                ),
+                None,
+            )
+            url = cast(str, (db_entry or {}).get("doh_url", ""))
+            if not url:
+                missing.append(resolver["name"] or resolver["ip"])
+            else:
+                url_map[resolver["ip"]] = url
+
+        if missing:
+            raise click.UsageError(
+                f"--doh requires a DoH URL for: {', '.join(missing)}. "
+                "Use --doh-url to supply them explicitly."
+            )
+
+    return QueryProtocol.DOH, url_map
 
 
 @click.group()
@@ -280,6 +342,20 @@ def reset_feedback() -> None:
 
 # =================== Benchmark command
 @cli.command()
+@click.option("--doh", is_flag=True, default=False, help="Use DNS-over-HTTPS.")
+@click.option("--dot", is_flag=True, default=False, help="Use DNS-over-TLS.")
+@click.option(
+    "--doh-url",
+    default=None,
+    help="Comma-separated DoH URLs, one per resolver (required if resolver not in db).",
+)
+@click.option(
+    "--dnssec-validate",
+    is_flag=True,
+    default=False,
+    help="Fail queries where DNSSEC AD flag is not set.",
+)
+# ------------
 @click.option("--resolvers", "-r", help="JSON file with resolver list")
 @click.option("--domains", "-d", help="Text file with domain list")
 @click.option(
@@ -319,6 +395,11 @@ def reset_feedback() -> None:
     "--include-charts", is_flag=True, help="Include charts in Excel and PDF exports"
 )
 def benchmark(
+    # New
+    doh: bool,
+    dot: bool,
+    doh_url: Optional[str],
+    dnssec_validate: bool,
     resolvers: Optional[str],
     domains: Optional[str],
     record_types: str,
@@ -408,11 +489,33 @@ def benchmark(
     except Exception as e:
         click.echo(error(f"Error loading domains: {e}"))
         return
+    # New
+    if dnssec_validate:
+        signed = {
+            d["domain"]
+            for d in DomainManager.DOMAINS_DATABASE
+            if d.get("dnssec_signed")
+        }
+        if not any(d in signed for d in domain_list):
+            click.echo(
+                warning(
+                    "No DNSSEC-signed domains in test set — all queries will fail AD validation. "
+                    "Add signed domains or use --domains with known signed domains."
+                )
+            )
 
     # Calculate total queries
     total_queries = (
         len(resolver_list) * len(domain_list) * len(record_type_list) * iterations
     )
+
+    protocol, doh_urls = _resolve_protocol_and_doh_urls(
+        doh=doh,
+        dot=dot,
+        doh_url=doh_url,
+        resolvers=resolver_list,
+    )
+
     if not quiet:
         click.echo(info("Configuration:"))
         click.echo(info(f"- Resolvers: {len(resolver_list)}"))
@@ -422,6 +525,15 @@ def benchmark(
         click.echo(info(f"- Total queries: {total_queries}"))
         if use_cache:
             click.echo(info("- Cache enabled: queries may be reused across iterations"))
+        # New
+        if protocol != QueryProtocol.PLAIN:
+            click.echo(info(f"- Protocol: {protocol.value.upper()}"))
+        if dnssec_validate:
+            click.echo(
+                info("- DNSSEC validation: enforced (queries fail if AD flag absent)")
+            )
+        else:
+            click.echo(info("- DNSSEC: passive (AD flag collected, not enforced)"))
 
     # Show warmup message
     if (warmup or warmup_fast) and not quiet:
@@ -437,13 +549,15 @@ def benchmark(
     feedback_manager.increment_run()
 
     start_time = time.time()
-
+    # New
     try:
         engine = DNSQueryEngine(
             max_concurrent_queries=max_concurrent,
             timeout=timeout,
             max_retries=retries,
             enable_cache=use_cache,
+            enable_dnssec=True,  # always collect AD flag - always True
+            enforce_dnssec=dnssec_validate,
         )
 
         progress_bar = None
@@ -465,7 +579,7 @@ def benchmark(
                     pass
 
             engine.set_progress_callback(_progress_cb)
-
+        # New
         results = asyncio.run(
             engine.run_benchmark(
                 resolvers=resolver_list,
@@ -475,6 +589,8 @@ def benchmark(
                 warmup=warmup,
                 warmup_fast=warmup_fast,
                 use_cache=use_cache,
+                protocol=protocol,
+                doh_urls=doh_urls,
             )
         )
 
@@ -489,6 +605,7 @@ def benchmark(
         analyzer = BenchmarkAnalyzer(results)
         overall_stats = analyzer.get_overall_statistics()
 
+        # New
         if not quiet:
             click.echo(info("=== BENCHMARK SUMMARY ==="))
             summary_lines = [
@@ -498,6 +615,8 @@ def benchmark(
                 f"Median latency: {overall_stats['overall_median_latency']:.2f} ms",
                 f"Fastest resolver: {overall_stats['fastest_resolver']}",
                 f"Slowest resolver: {overall_stats['slowest_resolver']}",
+                f"Protocol: {protocol.value.upper()}",
+                f"DNSSEC validated: {sum(1 for r in results if r.dnssec_validated)} / {len(results)} queries",
             ]
             # Add iteration info if multiple iterations
             if iterations > 1:
@@ -624,6 +743,7 @@ def benchmark(
 
 # ====================== Top Resolvers Command
 @cli.command()
+# --------
 @click.option("--limit", "-n", default=10, help="Number of top resolvers to display")
 @click.option(
     "--metric",
@@ -931,6 +1051,7 @@ def top(
 
 # ======================= Compare
 @cli.command()
+# ----------
 @click.argument("resolvers", nargs=-1, required=True)
 @click.option("--domains", "-d", help="Text file with domain list")
 @click.option(
@@ -1191,6 +1312,7 @@ def compare(
 
 # ==================== Monitoring Command
 @cli.command()
+# ---------
 @click.option("--resolvers", "-r", help="JSON file with resolver list")
 @click.option("--domains", "-d", help="Text file with domain list")
 @click.option(
