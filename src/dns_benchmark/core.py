@@ -3,6 +3,8 @@
 import asyncio
 import ipaddress
 import json
+import ssl
+import struct
 import time
 import uuid
 from collections import defaultdict
@@ -14,6 +16,13 @@ from typing import Any, Callable, Dict, List, Optional, cast
 import click
 import dns.asyncresolver
 import dns.exception
+import dns.flags
+import dns.message
+import dns.name
+
+# import dns.query
+import dns.rdatatype
+import httpx
 import idna
 
 from dns_benchmark.utils.messages import warning
@@ -26,6 +35,13 @@ class QueryStatus(Enum):
     SERVFAIL = "servfail"
     CONNECTION_REFUSED = "connection_refused"
     UNKNOWN_ERROR = "unknown_error"
+    DNSSEC_FAILED = "dnssec_failed"
+
+
+class QueryProtocol(Enum):
+    PLAIN = "plain"
+    DOH = "doh"
+    DOT = "dot"
 
 
 @dataclass
@@ -45,12 +61,15 @@ class DNSQueryResult:
     error_message: Optional[str] = None
     attempt_number: int = 1
     cache_hit: bool = False
+    dnssec_validated: bool = False
+    protocol: QueryProtocol = QueryProtocol.PLAIN
     iteration: int = 1  # which iteration this query belongs to
     query_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value
+        d["protocol"] = self.protocol.value
         return d
 
 
@@ -65,6 +84,8 @@ class DNSQueryEngine:
         enable_cache: bool = False,
         retry_backoff_multiplier: float = 0.1,
         retry_backoff_base: float = 2.0,
+        enable_dnssec: bool = False,
+        enforce_dnssec: bool = False,  # True when --dnssec-validate passed
     ) -> None:
         self.max_concurrent_queries = max_concurrent_queries
         self.timeout = timeout
@@ -80,6 +101,8 @@ class DNSQueryEngine:
         self.retry_backoff_multiplier = retry_backoff_multiplier
         self.retry_backoff_base = retry_backoff_base
         self.failed_resolvers: Dict[str, int] = defaultdict(int)
+        self.enable_dnssec = enable_dnssec
+        self.enforce_dnssec = enforce_dnssec
 
     async def _ensure_async_primitives(self) -> None:
         """Create asyncio primitives when running inside an event loop."""
@@ -151,6 +174,9 @@ class DNSQueryEngine:
                     resolver.timeout = self.timeout
                     resolver.lifetime = self.timeout
 
+                    if self.enable_dnssec:
+                        resolver.use_edns(0, dns.flags.DO, 1232)
+
                     response = await resolver.resolve(
                         domain, record_type, raise_on_no_answer=False
                     )
@@ -165,6 +191,17 @@ class DNSQueryEngine:
                     )
                     ttl = response.rrset.ttl if response.rrset else None
 
+                    # DNSSEC: always read AD flag, enforce only if requested
+                    ad_flag = False
+                    try:
+                        ad_flag = bool(response.response.flags & dns.flags.AD)
+                    except AttributeError:
+                        pass
+
+                    dnssec_status = QueryStatus.SUCCESS
+                    if self.enforce_dnssec and not ad_flag:
+                        dnssec_status = QueryStatus.DNSSEC_FAILED
+
                     result = DNSQueryResult(
                         resolver_ip=resolver_ip,
                         resolver_name=resolver_name,
@@ -173,12 +210,14 @@ class DNSQueryEngine:
                         start_time=start_time,
                         end_time=end_time,
                         latency_ms=latency_ms,
-                        status=QueryStatus.SUCCESS,
+                        status=dnssec_status,
                         answers=answers,
                         ttl=ttl,
                         attempt_number=attempt + 1,
                         cache_hit=False,
                         iteration=iteration,
+                        dnssec_validated=ad_flag,
+                        protocol=QueryProtocol.PLAIN,
                     )
 
                     # Cache successful result
@@ -344,6 +383,347 @@ class DNSQueryEngine:
         await self._update_progress()
         return result
 
+    async def query_single_doh(
+        self,
+        resolver_ip: str,
+        resolver_name: str,
+        domain: str,
+        doh_url: str,
+        record_type: str = "A",
+        iteration: int = 1,
+    ) -> DNSQueryResult:
+        """Execute a single DNS-over-HTTPS query."""
+
+        await self._ensure_async_primitives()
+        assert self.semaphore is not None
+
+        start_time = time.time()
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                async with self.semaphore:
+                    start_time = time.time()
+
+                    # Build DNS wire-format query
+                    qname = dns.name.from_text(domain)
+                    rdtype = dns.rdatatype.from_text(record_type)
+                    request = dns.message.make_query(qname, rdtype)
+                    if self.enable_dnssec:
+                        request.use_edns(ednsflags=dns.flags.DO)
+                    wire = request.to_wire()
+
+                    async with httpx.AsyncClient(
+                        http2=True,
+                        timeout=self.timeout,
+                        verify=True,  # enforce TLS — never disable
+                    ) as client:
+                        response_raw = await client.post(
+                            doh_url,
+                            content=wire,
+                            headers={
+                                "Content-Type": "application/dns-message",
+                                "Accept": "application/dns-message",
+                            },
+                        )
+                        response_raw.raise_for_status()
+
+                    end_time = time.time()
+                    latency_ms = (end_time - start_time) * 1000
+
+                    dns_response = dns.message.from_wire(response_raw.content)
+                    answers = [
+                        str(rdata) for rrset in dns_response.answer for rdata in rrset
+                    ]
+                    ttl = dns_response.answer[0].ttl if dns_response.answer else None
+
+                    ad_flag = bool(dns_response.flags & dns.flags.AD)
+                    dnssec_status = QueryStatus.SUCCESS
+                    if self.enforce_dnssec and not ad_flag:
+                        dnssec_status = QueryStatus.DNSSEC_FAILED
+
+                    result = DNSQueryResult(
+                        resolver_ip=resolver_ip,
+                        resolver_name=resolver_name,
+                        domain=domain,
+                        record_type=record_type,
+                        start_time=start_time,
+                        end_time=end_time,
+                        latency_ms=latency_ms,
+                        status=dnssec_status,
+                        answers=answers,
+                        ttl=ttl,
+                        attempt_number=attempt + 1,
+                        cache_hit=False,
+                        iteration=iteration,
+                        dnssec_validated=ad_flag,
+                        protocol=QueryProtocol.DOH,
+                    )
+                    await self._update_progress()
+                    return result
+
+            except httpx.TimeoutException:
+                if attempt == self.max_retries:
+                    end_time = time.time()
+                    async with self._lock:  # type: ignore[union-attr]
+                        self.failed_resolvers[resolver_ip] += 1
+                    result = DNSQueryResult(
+                        resolver_ip=resolver_ip,
+                        resolver_name=resolver_name,
+                        domain=domain,
+                        record_type=record_type,
+                        start_time=start_time,
+                        end_time=time.time(),
+                        latency_ms=(time.time() - start_time) * 1000,
+                        status=QueryStatus.TIMEOUT,
+                        answers=[],
+                        ttl=None,
+                        error_message="DoH timeout",
+                        attempt_number=attempt + 1,
+                        cache_hit=False,
+                        iteration=iteration,
+                        protocol=QueryProtocol.DOH,
+                    )
+                    await self._update_progress()
+                    return result
+                await asyncio.sleep(
+                    self.retry_backoff_base**attempt * self.retry_backoff_multiplier
+                )
+
+            except Exception as e:
+                if attempt == self.max_retries:
+                    end_time = time.time()
+                    async with self._lock:  # type: ignore[union-attr]
+                        self.failed_resolvers[resolver_ip] += 1
+                    result = DNSQueryResult(
+                        resolver_ip=resolver_ip,
+                        resolver_name=resolver_name,
+                        domain=domain,
+                        record_type=record_type,
+                        start_time=start_time,
+                        end_time=end_time,
+                        latency_ms=(end_time - start_time) * 1000,
+                        status=QueryStatus.UNKNOWN_ERROR,
+                        answers=[],
+                        ttl=None,
+                        error_message=str(e),
+                        attempt_number=attempt + 1,
+                        cache_hit=False,
+                        iteration=iteration,
+                        protocol=QueryProtocol.DOH,
+                    )
+                    await self._update_progress()
+                    return result
+                await asyncio.sleep(
+                    self.retry_backoff_base**attempt * self.retry_backoff_multiplier
+                )
+
+        # unreachable fallback
+        return DNSQueryResult(
+            resolver_ip=resolver_ip,
+            resolver_name=resolver_name,
+            domain=domain,
+            record_type=record_type,
+            start_time=start_time,
+            end_time=time.time(),
+            latency_ms=0.0,
+            status=QueryStatus.UNKNOWN_ERROR,
+            answers=[],
+            ttl=None,
+            error_message="Exhausted retries",
+            cache_hit=False,
+            iteration=iteration,
+            protocol=QueryProtocol.DOH,
+        )
+
+    async def query_single_dot(
+        self,
+        resolver_ip: str,
+        resolver_name: str,
+        domain: str,
+        record_type: str = "A",
+        port: int = 853,
+        iteration: int = 1,
+    ) -> DNSQueryResult:
+        """Execute a single DNS-over-TLS query."""
+
+        await self._ensure_async_primitives()
+        assert self.semaphore is not None
+
+        start_time = time.time()
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                async with self.semaphore:
+                    start_time = time.time()
+
+                    # Build wire-format query with length prefix (RFC 7858)
+                    qname = dns.name.from_text(domain)
+                    rdtype = dns.rdatatype.from_text(record_type)
+                    request = dns.message.make_query(qname, rdtype)
+                    if self.enable_dnssec:
+                        request.use_edns(ednsflags=dns.flags.DO)
+                    wire = request.to_wire()
+                    # 2-byte length prefix required by DoT spec
+                    prefixed = struct.pack("!H", len(wire)) + wire
+
+                    ssl_ctx = ssl.create_default_context()
+                    # enforce cert validation — never bypass for security tool
+                    ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+                    ssl_ctx.check_hostname = True
+
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(resolver_ip, port, ssl=ssl_ctx),
+                        timeout=self.timeout,
+                    )
+                    try:
+                        writer.write(prefixed)
+                        await writer.drain()
+
+                        # Read 2-byte length prefix then full message
+                        raw_len = await asyncio.wait_for(
+                            reader.readexactly(2), timeout=self.timeout
+                        )
+                        msg_len = struct.unpack("!H", raw_len)[0]
+                        raw_msg = await asyncio.wait_for(
+                            reader.readexactly(msg_len), timeout=self.timeout
+                        )
+                    finally:
+                        writer.close()
+                        try:
+                            await writer.wait_closed()
+                        except Exception:
+                            pass
+
+                    end_time = time.time()
+                    latency_ms = (end_time - start_time) * 1000
+
+                    dns_response = dns.message.from_wire(raw_msg)
+                    answers = [
+                        str(rdata) for rrset in dns_response.answer for rdata in rrset
+                    ]
+                    ttl = dns_response.answer[0].ttl if dns_response.answer else None
+
+                    ad_flag = bool(dns_response.flags & dns.flags.AD)
+                    dnssec_status = QueryStatus.SUCCESS
+                    if self.enforce_dnssec and not ad_flag:
+                        dnssec_status = QueryStatus.DNSSEC_FAILED
+
+                    result = DNSQueryResult(
+                        resolver_ip=resolver_ip,
+                        resolver_name=resolver_name,
+                        domain=domain,
+                        record_type=record_type,
+                        start_time=start_time,
+                        end_time=end_time,
+                        latency_ms=latency_ms,
+                        status=dnssec_status,
+                        answers=answers,
+                        ttl=ttl,
+                        attempt_number=attempt + 1,
+                        cache_hit=False,
+                        iteration=iteration,
+                        dnssec_validated=ad_flag,
+                        protocol=QueryProtocol.DOT,
+                    )
+                    await self._update_progress()
+                    return result
+
+            except asyncio.TimeoutError:
+                if attempt == self.max_retries:
+                    async with self._lock:  # type: ignore[union-attr]
+                        self.failed_resolvers[resolver_ip] += 1
+                    result = DNSQueryResult(
+                        resolver_ip=resolver_ip,
+                        resolver_name=resolver_name,
+                        domain=domain,
+                        record_type=record_type,
+                        start_time=start_time,
+                        end_time=time.time(),
+                        latency_ms=(time.time() - start_time) * 1000,
+                        status=QueryStatus.TIMEOUT,
+                        answers=[],
+                        ttl=None,
+                        error_message="DoT timeout",
+                        attempt_number=attempt + 1,
+                        cache_hit=False,
+                        iteration=iteration,
+                        protocol=QueryProtocol.DOT,
+                    )
+                    await self._update_progress()
+                    return result
+                await asyncio.sleep(
+                    self.retry_backoff_base**attempt * self.retry_backoff_multiplier
+                )
+
+            except ssl.SSLError as e:
+                # SSL errors are not retryable
+                async with self._lock:  # type: ignore[union-attr]
+                    self.failed_resolvers[resolver_ip] += 1
+                result = DNSQueryResult(
+                    resolver_ip=resolver_ip,
+                    resolver_name=resolver_name,
+                    domain=domain,
+                    record_type=record_type,
+                    start_time=start_time,
+                    end_time=time.time(),
+                    latency_ms=(time.time() - start_time) * 1000,
+                    status=QueryStatus.CONNECTION_REFUSED,
+                    answers=[],
+                    ttl=None,
+                    error_message=f"TLS error: {e}",
+                    attempt_number=attempt + 1,
+                    cache_hit=False,
+                    iteration=iteration,
+                    protocol=QueryProtocol.DOT,
+                )
+                await self._update_progress()
+                return result
+
+            except Exception as e:
+                if attempt == self.max_retries:
+                    async with self._lock:  # type: ignore[union-attr]
+                        self.failed_resolvers[resolver_ip] += 1
+                    result = DNSQueryResult(
+                        resolver_ip=resolver_ip,
+                        resolver_name=resolver_name,
+                        domain=domain,
+                        record_type=record_type,
+                        start_time=start_time,
+                        end_time=time.time(),
+                        latency_ms=(time.time() - start_time) * 1000,
+                        status=QueryStatus.UNKNOWN_ERROR,
+                        answers=[],
+                        ttl=None,
+                        error_message=str(e),
+                        attempt_number=attempt + 1,
+                        cache_hit=False,
+                        iteration=iteration,
+                        protocol=QueryProtocol.DOT,
+                    )
+                    await self._update_progress()
+                    return result
+                await asyncio.sleep(
+                    self.retry_backoff_base**attempt * self.retry_backoff_multiplier
+                )
+
+        # unreachable fallback
+        return DNSQueryResult(
+            resolver_ip=resolver_ip,
+            resolver_name=resolver_name,
+            domain=domain,
+            record_type=record_type,
+            start_time=start_time,
+            end_time=time.time(),
+            latency_ms=0.0,
+            status=QueryStatus.UNKNOWN_ERROR,
+            answers=[],
+            ttl=None,
+            error_message="Exhausted retries",
+            cache_hit=False,
+            iteration=iteration,
+            protocol=QueryProtocol.DOT,
+        )
+
     async def run_benchmark(
         self,
         resolvers: List[Dict[str, str]],
@@ -353,6 +733,8 @@ class DNSQueryEngine:
         warmup: bool = False,
         warmup_fast: bool = False,
         use_cache: bool = False,
+        protocol: QueryProtocol = QueryProtocol.PLAIN,
+        doh_urls: Optional[Dict[str, str]] = None,  # resolver_ip -> doh_url
     ) -> List[DNSQueryResult]:
         """Run benchmark across all resolvers and domains.
 
@@ -404,14 +786,33 @@ class DNSQueryEngine:
             for resolver in resolvers:
                 for domain in domains:
                     for record_type in record_types:
-                        task = self.query_single(
-                            resolver_ip=resolver["ip"],
-                            resolver_name=resolver["name"],
-                            domain=domain,
-                            record_type=record_type,
-                            use_cache=use_cache,
-                            iteration=iteration + 1,  # 1-indexed for readability
-                        )
+                        if protocol == QueryProtocol.DOH:
+                            url = (doh_urls or {}).get(resolver["ip"], "")
+                            task = self.query_single_doh(
+                                resolver_ip=resolver["ip"],
+                                resolver_name=resolver["name"],
+                                domain=domain,
+                                doh_url=url,
+                                record_type=record_type,
+                                iteration=iteration + 1,
+                            )
+                        elif protocol == QueryProtocol.DOT:
+                            task = self.query_single_dot(
+                                resolver_ip=resolver["ip"],
+                                resolver_name=resolver["name"],
+                                domain=domain,
+                                record_type=record_type,
+                                iteration=iteration + 1,
+                            )
+                        else:
+                            task = self.query_single(
+                                resolver_ip=resolver["ip"],
+                                resolver_name=resolver["name"],
+                                domain=domain,
+                                record_type=record_type,
+                                use_cache=use_cache,
+                                iteration=iteration + 1,
+                            )
                         tasks.append(task)
 
         results = await asyncio.gather(*tasks)
@@ -497,6 +898,7 @@ class ResolverManager:
             "features": ["DNSSEC", "Filtering", "Anycast", "DoH", "DoT"],
             "description": "Fast privacy-focused DNS with malware protection",
             "country": "Global",
+            "doh_url": "https://cloudflare-dns.com/dns-query",
         },
         {
             "name": "Cloudflare Family",
@@ -508,6 +910,7 @@ class ResolverManager:
             "features": ["Malware Blocking", "Adult Content Blocking", "DNSSEC"],
             "description": "Family-friendly DNS with malware and adult content blocking",
             "country": "Global",
+            "doh_url": "https://family.cloudflare-dns.com/dns-query",
         },
         {
             "name": "Google",
@@ -519,6 +922,7 @@ class ResolverManager:
             "features": ["Anycast", "Global Infrastructure", "DoH"],
             "description": "Google's public DNS with global anycast network",
             "country": "Global",
+            "doh_url": "https://dns.google/dns-query",
         },
         {
             "name": "Quad9",
@@ -530,6 +934,7 @@ class ResolverManager:
             "features": ["Malware Blocking", "Phishing Protection", "DNSSEC"],
             "description": "Security-focused DNS with threat intelligence",
             "country": "Global",
+            "doh_url": "https://dns.quad9.net/dns-query",
         },
         {
             "name": "OpenDNS",
@@ -541,6 +946,7 @@ class ResolverManager:
             "features": ["Content Filtering", "Phishing Protection", "Customizable"],
             "description": "Cisco's secure DNS with content filtering",
             "country": "Global",
+            "doh_url": "https://doh.opendns.com/dns-query",
         },
         {
             "name": "OpenDNS Family",
@@ -552,28 +958,7 @@ class ResolverManager:
             "features": ["Adult Content Blocking", "Malware Protection"],
             "description": "FamilyShield with pre-configured adult content blocking",
             "country": "Global",
-        },
-        {
-            "name": "Comodo Secure",
-            "provider": "Comodo",
-            "ip": "8.26.56.26",
-            "ipv6": "",
-            "type": "public",
-            "category": "security",
-            "features": ["Malware Protection", "Phishing Protection"],
-            "description": "Comodo's secure DNS with threat protection",
-            "country": "USA",
-        },
-        {
-            "name": "Verisign",
-            "provider": "Verisign",
-            "ip": "64.6.64.6",
-            "ipv6": "2620:74:1b::1:1",
-            "type": "public",
-            "category": "reliability",
-            "features": ["Stability", "DNSSEC", "Anycast"],
-            "description": "Verisign public DNS focused on stability and reliability",
-            "country": "USA",
+            "doh_url": "https://doh.familyshield.opendns.com/dns-query",
         },
         {
             "name": "AdGuard",
@@ -585,6 +970,7 @@ class ResolverManager:
             "features": ["Ad Blocking", "Tracker Blocking", "Malware Protection"],
             "description": "Privacy-focused DNS with ad and tracker blocking",
             "country": "Cyprus",
+            "doh_url": "https://dns.adguard.com/dns-query",
         },
         {
             "name": "AdGuard Family",
@@ -596,6 +982,7 @@ class ResolverManager:
             "features": ["Ad Blocking", "Adult Content Blocking", "Safe Search"],
             "description": "Family protection with ad blocking and safe search",
             "country": "Cyprus",
+            "doh_url": "https://dns-family.adguard.com/dns-query",
         },
         {
             "name": "CleanBrowsing",
@@ -607,6 +994,7 @@ class ResolverManager:
             "features": ["Adult Content Blocking", "Safe Search", "Malware Protection"],
             "description": "Content filtering DNS for families",
             "country": "USA",
+            "doh_url": "https://doh.cleanbrowsing.org/doh/family-filter/",
         },
         {
             "name": "Yandex",
@@ -618,28 +1006,7 @@ class ResolverManager:
             "features": ["Regional Optimization", "Safe Search"],
             "description": "Yandex DNS optimized for Russian and CIS regions",
             "country": "Russia",
-        },
-        {
-            "name": "DNS.WATCH",
-            "provider": "DNS.WATCH",
-            "ip": "84.200.69.80",
-            "ipv6": "2001:1608:10:25::1c04:b12f",
-            "type": "public",
-            "category": "privacy",
-            "features": ["No Filtering", "No Logging", "Net Neutrality"],
-            "description": "German DNS provider with no filtering and strong privacy",
-            "country": "Germany",
-        },
-        {
-            "name": "Level3",
-            "provider": "CenturyLink",
-            "ip": "4.2.2.1",
-            "ipv6": "",
-            "type": "public",
-            "category": "legacy",
-            "features": ["Reliability", "Long History"],
-            "description": "One of the original public DNS services",
-            "country": "USA",
+            "doh_url": "https://dns.yandex.net/dns-query",
         },
         {
             "name": "Neustar",
@@ -651,6 +1018,7 @@ class ResolverManager:
             "features": ["Malware Protection", "Phishing Protection", "Performance"],
             "description": "Neustar's security-focused recursive DNS",
             "country": "USA",
+            "doh_url": "https://dns.neustar/dns-query",
         },
         {
             "name": "SafeDNS",
@@ -662,17 +1030,7 @@ class ResolverManager:
             "features": ["Content Filtering", "Malware Protection"],
             "description": "SafeDNS with content filtering capabilities",
             "country": "UK",
-        },
-        {
-            "name": "Norton ConnectSafe",
-            "provider": "Norton",
-            "ip": "199.85.126.10",
-            "ipv6": "",
-            "type": "public",
-            "category": "security",
-            "features": ["Malware Protection", "Phishing Protection"],
-            "description": "Norton's security-focused DNS service",
-            "country": "USA",
+            "doh_url": "https://doh.safedns.com/dns-query",
         },
         {
             "name": "ControlD",
@@ -684,6 +1042,7 @@ class ResolverManager:
             "features": ["Custom Filtering", "Analytics", "DoH"],
             "description": "Customizable DNS with extensive filtering options",
             "country": "Canada",
+            "doh_url": "https://freedns.controld.com/p0",
         },
         {
             "name": "Alternate DNS",
@@ -695,6 +1054,7 @@ class ResolverManager:
             "features": ["Ad Blocking", "Tracker Blocking"],
             "description": "Alternative DNS focused on privacy and ad blocking",
             "country": "USA",
+            "doh_url": "https://dns.alternate-dns.com/dns-query",
         },
         {
             "name": "CZ.NIC",
@@ -706,7 +1066,64 @@ class ResolverManager:
             "features": ["DNSSEC", "Local Optimization"],
             "description": "Czech NIC's public DNS service",
             "country": "Czech Republic",
+            "doh_url": "https://odvr.nic.cz/doh",
         },
+        # --- NO DoH support. If you know a valid endpoint, please open a Pull Request ---
+        #    {
+        #        "name": "Comodo Secure",
+        #        "provider": "Comodo",
+        #        "ip": "8.26.56.26",
+        #        "ipv6": "",
+        #        "type": "public",
+        #        "category": "security",
+        #        "features": ["Malware Protection", "Phishing Protection"],
+        #        "description": "Comodo's secure DNS with threat protection",
+        #        "country": "USA",
+        #    },
+        #    {
+        #        "name": "Verisign",
+        #        "provider": "Verisign",
+        #        "ip": "64.6.64.6",
+        #        "ipv6": "2620:74:1b::1:1",
+        #        "type": "public",
+        #        "category": "reliability",
+        #        "features": ["Stability", "DNSSEC", "Anycast"],
+        #        "description": "Verisign public DNS focused on stability and reliability",
+        #        "country": "USA",
+        #    },
+        #    {
+        #        "name": "DNS.WATCH",
+        #        "provider": "DNS.WATCH",
+        #        "ip": "84.200.69.80",
+        #        "ipv6": "2001:1608:10:25::1c04:b12f",
+        #        "type": "public",
+        #        "category": "privacy",
+        #        "features": ["No Filtering", "No Logging", "Net Neutrality"],
+        #        "description": "German DNS provider with no filtering and strong privacy",
+        #        "country": "Germany",
+        #    },
+        #    {
+        #        "name": "Level3",
+        #        "provider": "CenturyLink",
+        #        "ip": "4.2.2.1",
+        #        "ipv6": "",
+        #        "type": "public",
+        #        "category": "legacy",
+        #        "features": ["Reliability", "Long History"],
+        #        "description": "One of the original public DNS services",
+        #        "country": "USA",
+        #    },
+        #    {
+        #        "name": "Norton ConnectSafe",
+        #        "provider": "Norton",
+        #        "ip": "199.85.126.10",
+        #        "ipv6": "",
+        #        "type": "public",
+        #        "category": "security",
+        #        "features": ["Malware Protection", "Phishing Protection"],
+        #        "description": "Norton's security-focused DNS service (discontinued)",
+        #        "country": "USA",
+        #    },
     ]
 
     @staticmethod
@@ -897,360 +1314,447 @@ class DomainManager:
     """Manage domain lists with comprehensive database."""
 
     # Comprehensive domain database
-    DOMAINS_DATABASE = [
+    DOMAINS_DATABASE: List[Dict[str, Any]] = [
         {
             "domain": "google.com",
             "category": "search",
             "description": "World's most popular search engine",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "youtube.com",
             "category": "video",
             "description": "Video sharing platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "facebook.com",
             "category": "social",
             "description": "Social networking service",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "amazon.com",
             "category": "ecommerce",
             "description": "E-commerce and cloud computing",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "twitter.com",
             "category": "social",
             "description": "Social media and microblogging",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "instagram.com",
             "category": "social",
             "description": "Photo and video sharing platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "linkedin.com",
             "category": "professional",
             "description": "Professional networking",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "wikipedia.org",
             "category": "reference",
             "description": "Free online encyclopedia",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "microsoft.com",
             "category": "tech",
             "description": "Software and technology company",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "apple.com",
             "category": "tech",
             "description": "Consumer electronics and software",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "netflix.com",
             "category": "streaming",
             "description": "Video streaming service",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "github.com",
             "category": "tech",
             "description": "Code hosting and collaboration",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "stackoverflow.com",
             "category": "tech",
             "description": "Programming Q&A community",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "reddit.com",
             "category": "social",
             "description": "Social news aggregation",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "whatsapp.com",
             "category": "messaging",
             "description": "Instant messaging platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "cloudflare.com",
             "category": "infrastructure",
             "description": "CDN and security services",
             "country": "USA",
+            "dnssec_signed": True,
+        },
+        {
+            "domain": "isc.org",
+            "category": "infrastructure",
+            "description": "Internet Systems Consortium (BIND, DHCP)",
+            "country": "USA",
+            "dnssec_signed": True,
+        },
+        {
+            "domain": "nlnetlabs.nl",
+            "category": "dns",
+            "description": "NLnet Labs (NSD, Unbound, ldns)",
+            "country": "Netherlands",
+            "dnssec_signed": True,
+        },
+        {
+            "domain": "dnssec-tools.org",
+            "category": "security",
+            "description": "DNSSEC tools and test suite",
+            "country": "USA",
+            "dnssec_signed": True,
+        },
+        {
+            "domain": "ietf.org",
+            "category": "standards",
+            "description": "Internet Engineering Task Force",
+            "country": "USA",
+            "dnssec_signed": True,
         },
         {
             "domain": "baidu.com",
             "category": "search",
             "description": "Chinese search engine",
             "country": "China",
+            "dnssec_signed": False,
         },
         {
             "domain": "taobao.com",
             "category": "ecommerce",
             "description": "Chinese online shopping",
             "country": "China",
+            "dnssec_signed": False,
         },
         {
             "domain": "qq.com",
             "category": "portal",
             "description": "Chinese web portal",
             "country": "China",
+            "dnssec_signed": False,
         },
         {
             "domain": "tmall.com",
             "category": "ecommerce",
             "description": "Chinese B2C online retail",
             "country": "China",
+            "dnssec_signed": False,
         },
         {
             "domain": "yahoo.com",
             "category": "portal",
             "description": "Web services portal",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "bing.com",
             "category": "search",
             "description": "Microsoft's search engine",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "live.com",
             "category": "email",
             "description": "Microsoft email and services",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "office.com",
             "category": "productivity",
             "description": "Microsoft Office suite",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "zoom.us",
             "category": "communication",
             "description": "Video conferencing platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "slack.com",
             "category": "communication",
             "description": "Business communication platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "dropbox.com",
             "category": "storage",
             "description": "Cloud storage service",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "adobe.com",
             "category": "creative",
             "description": "Creative software suite",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "paypal.com",
             "category": "finance",
             "description": "Online payments system",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "wordpress.com",
             "category": "publishing",
             "description": "Blogging and website platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "medium.com",
             "category": "publishing",
             "description": "Online publishing platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "quora.com",
             "category": "qna",
             "description": "Question and answer platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "imdb.com",
             "category": "entertainment",
             "description": "Movie and TV database",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "bbc.com",
             "category": "news",
             "description": "British broadcasting news",
             "country": "UK",
+            "dnssec_signed": False,
         },
         {
             "domain": "cnn.com",
             "category": "news",
             "description": "Cable news network",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "nytimes.com",
             "category": "news",
             "description": "New York Times newspaper",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "weather.com",
             "category": "weather",
             "description": "Weather forecasting service",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "espn.com",
             "category": "sports",
             "description": "Sports news and coverage",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "craigslist.org",
             "category": "classifieds",
             "description": "Classified advertisements",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "ebay.com",
             "category": "ecommerce",
             "description": "Online auction and shopping",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "aliexpress.com",
             "category": "ecommerce",
             "description": "Chinese online retail",
             "country": "China",
+            "dnssec_signed": False,
         },
         {
             "domain": "walmart.com",
             "category": "ecommerce",
             "description": "Multinational retail corporation",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "target.com",
             "category": "ecommerce",
             "description": "Retail corporation",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "bestbuy.com",
             "category": "ecommerce",
             "description": "Consumer electronics retailer",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "hulu.com",
             "category": "streaming",
             "description": "Video streaming service",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "spotify.com",
             "category": "music",
             "description": "Music streaming platform",
             "country": "Sweden",
+            "dnssec_signed": False,
         },
         {
             "domain": "soundcloud.com",
             "category": "music",
             "description": "Audio distribution platform",
             "country": "Germany",
+            "dnssec_signed": False,
         },
         {
             "domain": "deezer.com",
             "category": "music",
             "description": "Music streaming service",
             "country": "France",
+            "dnssec_signed": False,
         },
         {
             "domain": "twitch.tv",
             "category": "gaming",
             "description": "Live streaming for gamers",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "steampowered.com",
             "category": "gaming",
             "description": "Digital game distribution",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "epicgames.com",
             "category": "gaming",
             "description": "Video game and software developer",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "ubuntu.com",
             "category": "tech",
             "description": "Linux distribution",
             "country": "UK",
+            "dnssec_signed": False,
         },
         {
             "domain": "docker.com",
             "category": "tech",
             "description": "Container platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "kubernetes.io",
             "category": "tech",
             "description": "Container orchestration",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "gitlab.com",
             "category": "tech",
             "description": "DevOps platform",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "atlassian.com",
             "category": "tech",
             "description": "Software development tools",
             "country": "Australia",
+            "dnssec_signed": False,
         },
         {
             "domain": "notion.so",
             "category": "productivity",
             "description": "Note-taking and collaboration",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "figma.com",
             "category": "design",
             "description": "Collaborative design tool",
             "country": "USA",
+            "dnssec_signed": False,
         },
         {
             "domain": "canva.com",
             "category": "design",
             "description": "Graphic design platform",
             "country": "Australia",
+            "dnssec_signed": False,
         },
     ]
 
@@ -1345,6 +1849,13 @@ class DomainManager:
     def get_sample_domains() -> List[str]:
         """Get a list of sample domains for testing."""
         return [
+            # Signed domains with DNSSEC
+            "cloudflare.com",
+            "isc.org",
+            "nlnetlabs.nl",
+            "dnssec-tools.org",
+            "ietf.org",
+            # Non-signed domains
             "google.com",
             "github.com",
             "stackoverflow.com",
@@ -1367,12 +1878,12 @@ class DomainManager:
         return domains
 
     @staticmethod
-    def get_all_domains() -> List[Dict[str, str]]:
+    def get_all_domains() -> List[Dict[str, Any]]:
         """Get all available domains with detailed information."""
         return DomainManager.DOMAINS_DATABASE
 
     @staticmethod
-    def get_domains_by_category(category: str) -> List[Dict[str, str]]:
+    def get_domains_by_category(category: str) -> List[Dict[str, Any]]:
         """Get domains filtered by category."""
         return [
             d for d in DomainManager.DOMAINS_DATABASE if d.get("category") == category

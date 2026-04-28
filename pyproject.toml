@@ -26,7 +26,8 @@ dependencies = [
     "pyyaml>=6.0,<7.0",          
     "tqdm>=4.66,<5.0",           
     "matplotlib>=3.8,<4.0",
-    "pillow>=11.0.0,<12.0.0"
+    "pillow>=11.0.0,<12.0.0",
+    "httpx[http2]>=0.28.1,<0.29",
 ]
 
 classifiers = [

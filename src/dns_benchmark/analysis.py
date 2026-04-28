@@ -27,6 +27,8 @@ class ResolverStats:
     p99_latency: float
     jitter: float = 0.0
     consistency_score: float = 0.0
+    dnssec_validated_queries: int = 0
+    dnssec_validation_rate: float = 0.0
 
 
 class BenchmarkAnalyzer:
@@ -56,6 +58,8 @@ class BenchmarkAnalyzer:
                     "cache_hit": result.cache_hit,
                     "interation": result.iteration,
                     "query_id": result.query_id,
+                    "protocol": result.protocol.value,
+                    "dnssec_validated": result.dnssec_validated,
                 }
             )
 
@@ -75,7 +79,12 @@ class BenchmarkAnalyzer:
             success_rate = (
                 (successful_queries / total_queries) * 100 if total_queries > 0 else 0
             )
-
+            dnssec_validated_queries = int(resolver_data["dnssec_validated"].sum())
+            dnssec_validation_rate = (
+                (dnssec_validated_queries / total_queries) * 100
+                if total_queries > 0
+                else 0.0
+            )
             # Latency statistics (only for successful queries)
             successful_latencies = resolver_data[resolver_data["success"] == True][
                 "latency_ms"
@@ -123,6 +132,8 @@ class BenchmarkAnalyzer:
                 p99_latency=p99_latency,
                 jitter=jitter,
                 consistency_score=consistency_score,
+                dnssec_validated_queries=dnssec_validated_queries,
+                dnssec_validation_rate=dnssec_validation_rate,
             )
 
             resolver_stats.append(stats)
@@ -169,6 +180,13 @@ class BenchmarkAnalyzer:
             "resolver_count": len(resolver_stats),
             "domain_count": len(self.df["domain"].unique()),
             "record_types": list(self.df["record_type"].unique()),
+            "protocols_used": list(self.df["protocol"].unique()),
+            "dnssec_validated_queries": int(self.df["dnssec_validated"].sum()),
+            "dnssec_validation_rate": (
+                float(self.df["dnssec_validated"].sum() / total_queries * 100)
+                if total_queries > 0
+                else 0.0
+            ),
         }
 
     def get_domain_statistics(self) -> List[Dict[str, Any]]:
@@ -236,3 +254,59 @@ class BenchmarkAnalyzer:
         """Count errors by message across all failed queries."""
         errors = self.df[self.df["success"] == False]["error_message"]
         return cast(Dict[str, int], errors.value_counts().to_dict())
+
+    def get_protocol_statistics(self) -> List[Dict[str, Any]]:
+        """Compute statistics broken down by protocol (plain/doh/dot)."""
+        proto_stats: List[Dict[str, Any]] = []
+        for proto in self.df["protocol"].unique():
+            proto_df = self.df[self.df["protocol"] == proto]
+            total = len(proto_df)
+            success = int(proto_df["success"].sum())
+            rate = (success / total) * 100 if total > 0 else 0.0
+            latencies = proto_df[proto_df["success"] == True]["latency_ms"]
+            dnssec_validated = int(proto_df["dnssec_validated"].sum())
+            proto_stats.append(
+                {
+                    "protocol": proto,
+                    "total_queries": total,
+                    "successful_queries": success,
+                    "success_rate": rate,
+                    "avg_latency": float(latencies.mean()) if len(latencies) else 0.0,
+                    "median_latency": (
+                        float(latencies.median()) if len(latencies) else 0.0
+                    ),
+                    "p95_latency": (
+                        float(latencies.quantile(0.95)) if len(latencies) else 0.0
+                    ),
+                    "dnssec_validated_queries": dnssec_validated,
+                    "dnssec_validation_rate": (
+                        (dnssec_validated / total * 100) if total > 0 else 0.0
+                    ),
+                }
+            )
+        return proto_stats
+
+    def get_dnssec_statistics(self) -> List[Dict[str, Any]]:
+        """DNSSEC validation breakdown per resolver + protocol combination."""
+        dnssec_stats: List[Dict[str, Any]] = []
+        for resolver_name in self.df["resolver_name"].unique():
+            resolver_df = self.df[self.df["resolver_name"] == resolver_name]
+            for proto in resolver_df["protocol"].unique():
+                proto_df = resolver_df[resolver_df["protocol"] == proto]
+                total = len(proto_df)
+                validated = int(proto_df["dnssec_validated"].sum())
+                dnssec_stats.append(
+                    {
+                        "resolver_name": resolver_name,
+                        "resolver_ip": proto_df["resolver_ip"].iloc[0],
+                        "protocol": proto,
+                        "total_queries": total,
+                        "dnssec_validated_queries": validated,
+                        "dnssec_validation_rate": (
+                            (validated / total * 100) if total > 0 else 0.0
+                        ),
+                        # True only if ALL queries for this resolver+protocol validated
+                        "fully_validated": validated == total,
+                    }
+                )
+        return dnssec_stats

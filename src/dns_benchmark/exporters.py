@@ -35,6 +35,8 @@ class ExportBundle:
         payload = {
             "overall": analyzer.get_overall_statistics(),
             "resolver_stats": [vars(s) for s in analyzer.get_resolver_statistics()],
+            "protocol_stats": analyzer.get_protocol_statistics(),
+            "dnssec_stats": analyzer.get_dnssec_statistics(),
             "raw_results": [
                 {
                     "resolver_name": r.resolver_name,
@@ -52,6 +54,8 @@ class ExportBundle:
                     "cache_hit": r.cache_hit,
                     "iteration": r.iteration,
                     "query_id": r.query_id,
+                    "protocol": r.protocol.value,
+                    "dnssec_validated": r.dnssec_validated,
                 }
                 for r in results
             ],
@@ -88,6 +92,8 @@ class CSVExporter:
                     "cache_hit": result.cache_hit,
                     "iteration": result.iteration,
                     "query_id": result.query_id,
+                    "protocol": result.protocol.value,
+                    "dnssec_validated": result.dnssec_validated,
                 }
             )
 
@@ -119,6 +125,8 @@ class CSVExporter:
                     "p99_latency_ms": stats.p99_latency,
                     "jitter_ms": stats.jitter,
                     "consistency_score": stats.consistency_score,
+                    "dnssec_validated_queries": stats.dnssec_validated_queries,
+                    "dnssec_validation_rate": stats.dnssec_validation_rate,
                 }
             )
 
@@ -144,6 +152,20 @@ class CSVExporter:
         df = pd.DataFrame(
             [{"error_message": k, "count": v} for k, v in error_stats.items()]
         )
+        df.to_csv(output_path, index=False)
+
+    @staticmethod
+    def export_protocol_statistics(
+        protocol_stats: List[Dict[str, Any]], output_path: str
+    ) -> None:
+        df = pd.DataFrame(protocol_stats)
+        df.to_csv(output_path, index=False)
+
+    @staticmethod
+    def export_dnssec_statistics(
+        dnssec_stats: List[Dict[str, Any]], output_path: str
+    ) -> None:
+        df = pd.DataFrame(dnssec_stats)
         df.to_csv(output_path, index=False)
 
 
@@ -184,6 +206,18 @@ class ExcelExporter:
                     [{"Error": k, "Count": v} for k, v in error_stats.items()]
                 )
                 ExcelExporter._add_simple_table_sheet(wb, "Error Breakdown", df)
+
+            # Protocol breakdown sheet
+            protocol_stats = analyzer.get_protocol_statistics()
+            if protocol_stats:
+                ExcelExporter._add_simple_table_sheet(
+                    wb, "Protocol Stats", pd.DataFrame(protocol_stats)
+                )
+
+            # DNSSEC breakdown sheet
+            dnssec_stats = analyzer.get_dnssec_statistics()
+            if dnssec_stats:
+                ExcelExporter._add_dnssec_sheet(wb, dnssec_stats)
 
             # Add charts if requested
             if include_charts:
@@ -254,6 +288,8 @@ class ExcelExporter:
                     "Attempts": result.attempt_number,
                     "Cached": result.cache_hit,
                     "Iteration": result.iteration,
+                    "Protocol": result.protocol.value,
+                    "DNSSEC Validated": result.dnssec_validated,
                 }
             )
 
@@ -313,6 +349,8 @@ class ExcelExporter:
                     "P99 Latency (ms)": round(stats.p99_latency, 2),
                     "Jitter": round(stats.jitter, 2),
                     "Consistency": round(stats.consistency_score, 2),
+                    "DNSSEC Validated": stats.dnssec_validated_queries,
+                    "DNSSEC Rate (%)": round(stats.dnssec_validation_rate, 2),
                 }
             )
 
@@ -390,6 +428,56 @@ class ExcelExporter:
 
         # Return paths for cleanup after workbook is saved
         return [latency_chart_path, success_chart_path]
+
+    @staticmethod
+    def _add_dnssec_sheet(wb: Workbook, dnssec_stats: List[Dict[str, Any]]) -> None:
+        """DNSSEC validation sheet with conditional colouring."""
+        ws = wb.create_sheet("DNSSEC")
+        headers = [
+            "Resolver",
+            "IP",
+            "Protocol",
+            "Total Queries",
+            "Validated",
+            "Validation Rate (%)",
+            "Fully Validated",
+        ]
+        GREEN = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        RED = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        HEADER = PatternFill(
+            start_color="E0E0E0", end_color="E0E0E0", fill_type="solid"
+        )
+
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = HEADER
+
+        for row_idx, stat in enumerate(dnssec_stats, 2):
+            values = [
+                stat["resolver_name"],
+                stat["resolver_ip"],
+                stat["protocol"],
+                stat["total_queries"],
+                stat["dnssec_validated_queries"],
+                round(stat["dnssec_validation_rate"], 2),
+                stat["fully_validated"],
+            ]
+            for col_idx, value in enumerate(values, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+
+            # Colour entire row by validation status
+            row_fill = GREEN if stat["fully_validated"] else RED
+            for col_idx in range(1, len(headers) + 1):
+                ws.cell(row=row_idx, column=col_idx).fill = row_fill
+
+        for column in ws.columns:
+            max_length = max(
+                (len(str(cell.value)) for cell in column if cell.value), default=10
+            )
+            ws.column_dimensions[column[0].column_letter].width = min(
+                max_length + 2, 40
+            )
 
     @staticmethod
     def _generate_latency_chart_for_excel(
@@ -523,7 +611,10 @@ class PDFExporter:
 
             # Generate HTML content with base64 images
             html_content = PDFExporter._generate_html_content(
-                analyzer, latency_b64, success_b64
+                analyzer,
+                latency_b64,
+                success_b64,
+                dnssec_stats=analyzer.get_dnssec_statistics(),
             )
             # Write PDF before cleaning up temp files
             HTML(string=html_content).write_pdf(output_path)
@@ -626,6 +717,7 @@ class PDFExporter:
         analyzer: BenchmarkAnalyzer,
         latency_chart_b64: str,
         success_chart_b64: Optional[str] = None,
+        dnssec_stats: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Generate HTML content for PDF report."""
         resolver_stats = analyzer.get_resolver_statistics()
@@ -651,6 +743,55 @@ class PDFExporter:
                 </div>
             </div>
             """
+
+        dnssec_block = ""
+        if dnssec_stats:
+            rows = "".join(
+                f"<tr>"
+                f"<td>{s['resolver_name']}</td>"
+                f"<td>{s['protocol']}</td>"
+                f"<td>{s['dnssec_validated_queries']}/{s['total_queries']}</td>"
+                f"<td>{s['dnssec_validation_rate']:.1f}%</td>"
+                f"<td style='color:{'green' if s['fully_validated'] else 'red'};font-weight:bold'>"
+                f"{'✓' if s['fully_validated'] else '✗'}</td>"
+                f"</tr>"
+                for s in dnssec_stats
+            )
+            dnssec_block = f"""
+            <div class="section">
+                <h2>DNSSEC Validation</h2>
+                <table>
+                    <tr>
+                        <th>Resolver</th>
+                        <th>Protocol</th>
+                        <th>Validated</th>
+                        <th>Rate</th>
+                        <th>Fully Validated</th>
+                    </tr>
+                    {rows}
+                </table>
+            </div>"""
+
+        # Extended executive summary with DNSSEC fields (safe fallback)
+        dnssec_summary = ""
+        if dnssec_stats:
+            total_validated = sum(
+                s.get("dnssec_validated_queries", 0) for s in dnssec_stats
+            )
+            total_queries_dnssec = sum(s.get("total_queries", 0) for s in dnssec_stats)
+            validation_rate = (
+                (total_validated / total_queries_dnssec * 100)
+                if total_queries_dnssec
+                else 0
+            )
+            dnssec_summary = f"""
+            <p><strong>DNSSEC validated queries:</strong> {total_validated} ({validation_rate:.1f}%)</p>
+            """
+            # Add protocols used (collect unique protocols from dnssec_stats)
+            protocols = sorted(set(s.get("protocol", "Unknown") for s in dnssec_stats))
+            dnssec_summary += (
+                f"<p><strong>Protocols tested:</strong> {', '.join(protocols)}</p>"
+            )
 
         template_str = f"""
         <!DOCTYPE html>
@@ -771,6 +912,7 @@ class PDFExporter:
                 )}
             </table>
         </div>
+        {dnssec_block}
         </body>
         </html>
         """
