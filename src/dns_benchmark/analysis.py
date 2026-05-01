@@ -50,13 +50,21 @@ class BenchmarkAnalyzer:
                     "record_type": result.record_type,
                     "latency_ms": result.latency_ms,
                     "status": result.status.value,
+                    # True for SUCCESS only — used for success rate reporting
                     "success": result.status == QueryStatus.SUCCESS,
+                    # True for SUCCESS or DNSSEC_FAILED — query completed at network
+                    # level so latency is valid and should be included in stats.
+                    "completed": result.status
+                    in (
+                        QueryStatus.SUCCESS,
+                        QueryStatus.DNSSEC_FAILED,
+                    ),
                     "answers_count": len(result.answers),
                     "ttl": result.ttl or 0,
                     "error_message": result.error_message or "",
                     "attempt_number": result.attempt_number,
                     "cache_hit": result.cache_hit,
-                    "interation": result.iteration,
+                    "iteration": result.iteration,
                     "query_id": result.query_id,
                     "protocol": result.protocol.value,
                     "dnssec_validated": result.dnssec_validated,
@@ -75,7 +83,7 @@ class BenchmarkAnalyzer:
 
             # Basic counts
             total_queries = len(resolver_data)
-            successful_queries = len(resolver_data[resolver_data["success"] == True])
+            successful_queries = len(resolver_data[resolver_data["completed"] == True])
             success_rate = (
                 (successful_queries / total_queries) * 100 if total_queries > 0 else 0
             )
@@ -86,7 +94,7 @@ class BenchmarkAnalyzer:
                 else 0.0
             )
             # Latency statistics (only for successful queries)
-            successful_latencies = resolver_data[resolver_data["success"] == True][
+            successful_latencies = resolver_data[resolver_data["completed"] == True][
                 "latency_ms"
             ]
 
@@ -143,12 +151,12 @@ class BenchmarkAnalyzer:
     def get_overall_statistics(self) -> Dict[str, Any]:
         """Get overall benchmark statistics."""
         total_queries = len(self.df)
-        successful_queries = len(self.df[self.df["success"] == True])
+        successful_queries = len(self.df[self.df["completed"] == True])
         overall_success_rate = (
             (successful_queries / total_queries) * 100 if total_queries > 0 else 0
         )
 
-        successful_latencies = self.df[self.df["success"] == True]["latency_ms"]
+        successful_latencies = self.df[self.df["completed"] == True]["latency_ms"]
 
         if len(successful_latencies) > 0:
             overall_avg_latency = float(successful_latencies.mean())
@@ -195,15 +203,15 @@ class BenchmarkAnalyzer:
         for domain in self.df["domain"].unique():
             dd = self.df[self.df["domain"] == domain]
             total = len(dd)
-            success = len(dd[dd["success"] == True])
+            success = len(dd[dd["completed"] == True])
             rate = (success / total) * 100 if total > 0 else 0.0
 
-            latencies = dd[dd["success"] == True]["latency_ms"]
+            latencies = dd[dd["completed"] == True]["latency_ms"]
 
             # Find fastest and slowest resolvers for this domain
             if len(latencies) > 0:
-                fastest_idx = dd[dd["success"] == True]["latency_ms"].idxmin()
-                slowest_idx = dd[dd["success"] == True]["latency_ms"].idxmax()
+                fastest_idx = dd[dd["completed"] == True]["latency_ms"].idxmin()
+                slowest_idx = dd[dd["completed"] == True]["latency_ms"].idxmax()
                 fastest_resolver = dd.loc[fastest_idx, "resolver_name"]
                 slowest_resolver = dd.loc[slowest_idx, "resolver_name"]
             else:
@@ -233,9 +241,9 @@ class BenchmarkAnalyzer:
         for rt in self.df["record_type"].unique():
             rt_df = self.df[self.df["record_type"] == rt]
             total = len(rt_df)
-            success = len(rt_df[rt_df["success"] == True])
+            success = len(rt_df[rt_df["completed"] == True])
             rate = (success / total) * 100 if total > 0 else 0.0
-            latencies = rt_df[rt_df["success"] == True]["latency_ms"]
+            latencies = rt_df[rt_df["completed"] == True]["latency_ms"]
             rt_stats.append(
                 {
                     "record_type": rt,
@@ -261,9 +269,9 @@ class BenchmarkAnalyzer:
         for proto in self.df["protocol"].unique():
             proto_df = self.df[self.df["protocol"] == proto]
             total = len(proto_df)
-            success = int(proto_df["success"].sum())
+            success = int(proto_df["completed"].sum())
             rate = (success / total) * 100 if total > 0 else 0.0
-            latencies = proto_df[proto_df["success"] == True]["latency_ms"]
+            latencies = proto_df[proto_df["completed"] == True]["latency_ms"]
             dnssec_validated = int(proto_df["dnssec_validated"].sum())
             proto_stats.append(
                 {

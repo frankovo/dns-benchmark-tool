@@ -11,7 +11,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import click
 import dns.asyncresolver
@@ -19,13 +19,11 @@ import dns.exception
 import dns.flags
 import dns.message
 import dns.name
-
-# import dns.query
 import dns.rdatatype
 import httpx
 import idna
 
-from dns_benchmark.utils.messages import warning
+from dns_benchmark.utils.messages import error, warning
 
 
 class QueryStatus(Enum):
@@ -36,10 +34,11 @@ class QueryStatus(Enum):
     CONNECTION_REFUSED = "connection_refused"
     UNKNOWN_ERROR = "unknown_error"
     DNSSEC_FAILED = "dnssec_failed"
+    TLS_ERROR = "tls_error"
 
 
 class QueryProtocol(Enum):
-    PLAIN = "plain"
+    PLAIN = "plain"  # traditional DNS over UDP/TCP, dnspython will handle protocol selection and fallback
     DOH = "doh"
     DOT = "dot"
 
@@ -104,12 +103,15 @@ class DNSQueryEngine:
         self.enable_dnssec = enable_dnssec
         self.enforce_dnssec = enforce_dnssec
 
-    async def _ensure_async_primitives(self) -> None:
-        """Create asyncio primitives when running inside an event loop."""
-        if self.semaphore is None:
-            self.semaphore = asyncio.Semaphore(self.max_concurrent_queries)
-        if self._lock is None:
-            self._lock = asyncio.Lock()
+        # Shared DoH clients and DoT connections, one per resolver IP.
+        # Reusing these avoids repeated TLS handshakes — biggest latency win
+        # for encrypted protocols. Cleaned up via engine.close().
+        # NOT thread-safe — safe only because asyncio is single-threaded.
+        # Do not access from threads without adding locks.
+        self._doh_clients: Dict[str, httpx.AsyncClient] = {}
+        self._dot_connections: Dict[
+            str, Tuple[asyncio.StreamReader, asyncio.StreamWriter]
+        ] = {}
 
     def set_progress_callback(self, callback: Callable[[int, int], None]) -> None:
         """Set callback for progress updates with completed/total counts."""
@@ -118,6 +120,20 @@ class DNSQueryEngine:
     def _get_cache_key(self, resolver_ip: str, domain: str, record_type: str) -> str:
         """Generate cache key for query."""
         return f"{resolver_ip}:{domain}:{record_type}"
+
+    def _validate_resolver(self, resolver: Dict[str, str]) -> None:
+        """Validate resolver configuration."""
+        if "ip" not in resolver:
+            raise ValueError(f"Resolver missing 'ip' key: {resolver}")
+        if "name" not in resolver:
+            raise ValueError(f"Resolver missing 'name' key: {resolver}")
+
+    async def _ensure_async_primitives(self) -> None:
+        """Create asyncio primitives when running inside an event loop."""
+        if self.semaphore is None:
+            self.semaphore = asyncio.Semaphore(self.max_concurrent_queries)
+        if self._lock is None:
+            self._lock = asyncio.Lock()
 
     async def _update_progress(self) -> None:
         """Thread-safe progress update."""
@@ -128,12 +144,63 @@ class DNSQueryEngine:
             if self.progress_callback:
                 self.progress_callback(self.query_counter, self.total_queries)
 
-    def _validate_resolver(self, resolver: Dict[str, str]) -> None:
-        """Validate resolver configuration."""
-        if "ip" not in resolver:
-            raise ValueError(f"Resolver missing 'ip' key: {resolver}")
-        if "name" not in resolver:
-            raise ValueError(f"Resolver missing 'name' key: {resolver}")
+    async def _get_doh_client(self, resolver_ip: str) -> httpx.AsyncClient:
+        """Return cached AsyncClient for this resolver, creating if needed."""
+        if resolver_ip not in self._doh_clients:
+            self._doh_clients[resolver_ip] = httpx.AsyncClient(
+                http2=True,
+                timeout=self.timeout,
+                verify=True,
+            )
+        return self._doh_clients[resolver_ip]
+
+    async def _get_dot_connection(
+        self,
+        resolver_ip: str,
+        port: int = 853,
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Return a cached DoT connection for this resolver, creating if needed.
+
+        If the cached connection is dead (writer closing), it is evicted and
+        a fresh connection is opened. This avoids repeated TLS handshakes
+        across queries to the same resolver.
+        """
+        existing = self._dot_connections.get(resolver_ip)
+        if existing:
+            reader, writer = existing
+            if not writer.is_closing():
+                return reader, writer
+            # Dead connection — evict and fall through to reconnect
+            del self._dot_connections[resolver_ip]
+
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        ssl_ctx.check_hostname = True
+
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(resolver_ip, port, ssl=ssl_ctx),
+            timeout=self.timeout,
+        )
+        self._dot_connections[resolver_ip] = (reader, writer)
+        return reader, writer
+
+    async def close(self) -> None:
+        """Close all shared DoH clients and DoT connections.
+
+        Must be awaited after run_benchmark completes — especially important
+        in FastAPI where connections are reused across requests.
+        """
+        for client in self._doh_clients.values():
+            await client.aclose()
+        self._doh_clients.clear()
+
+        for _reader, writer in self._dot_connections.values():
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+        self._dot_connections.clear()
 
     async def query_single(
         self,
@@ -398,35 +465,26 @@ class DNSQueryEngine:
         assert self.semaphore is not None
 
         start_time = time.time()
-
+        client = await self._get_doh_client(resolver_ip)
         for attempt in range(self.max_retries + 1):
             try:
                 async with self.semaphore:
                     start_time = time.time()
-
-                    # Build DNS wire-format query
                     qname = dns.name.from_text(domain)
                     rdtype = dns.rdatatype.from_text(record_type)
                     request = dns.message.make_query(qname, rdtype)
                     if self.enable_dnssec:
                         request.use_edns(ednsflags=dns.flags.DO)
                     wire = request.to_wire()
-
-                    async with httpx.AsyncClient(
-                        http2=True,
-                        timeout=self.timeout,
-                        verify=True,  # enforce TLS — never disable
-                    ) as client:
-                        response_raw = await client.post(
-                            doh_url,
-                            content=wire,
-                            headers={
-                                "Content-Type": "application/dns-message",
-                                "Accept": "application/dns-message",
-                            },
-                        )
-                        response_raw.raise_for_status()
-
+                    response_raw = await client.post(
+                        doh_url,
+                        content=wire,
+                        headers={
+                            "Content-Type": "application/dns-message",
+                            "Accept": "application/dns-message",
+                        },
+                    )
+                    response_raw.raise_for_status()
                     end_time = time.time()
                     latency_ms = (end_time - start_time) * 1000
 
@@ -472,12 +530,40 @@ class DNSQueryEngine:
                         domain=domain,
                         record_type=record_type,
                         start_time=start_time,
-                        end_time=time.time(),
-                        latency_ms=(time.time() - start_time) * 1000,
+                        end_time=end_time,
+                        latency_ms=(end_time - start_time) * 1000,
                         status=QueryStatus.TIMEOUT,
                         answers=[],
                         ttl=None,
                         error_message="DoH timeout",
+                        attempt_number=attempt + 1,
+                        cache_hit=False,
+                        iteration=iteration,
+                        protocol=QueryProtocol.DOH,
+                    )
+                    await self._update_progress()
+                    return result
+                await asyncio.sleep(
+                    self.retry_backoff_base**attempt * self.retry_backoff_multiplier
+                )
+
+            except httpx.HTTPStatusError as e:
+                if attempt == self.max_retries:
+                    end_time = time.time()
+                    async with self._lock:  # type: ignore[union-attr]
+                        self.failed_resolvers[resolver_ip] += 1
+                    result = DNSQueryResult(
+                        resolver_ip=resolver_ip,
+                        resolver_name=resolver_name,
+                        domain=domain,
+                        record_type=record_type,
+                        start_time=start_time,
+                        end_time=end_time,
+                        latency_ms=(end_time - start_time) * 1000,
+                        status=QueryStatus.SERVFAIL,
+                        answers=[],
+                        ttl=None,
+                        error_message=f"HTTP {e.response.status_code}",
                         attempt_number=attempt + 1,
                         cache_hit=False,
                         iteration=iteration,
@@ -544,8 +630,12 @@ class DNSQueryEngine:
         port: int = 853,
         iteration: int = 1,
     ) -> DNSQueryResult:
-        """Execute a single DNS-over-TLS query."""
+        """Execute a single DNS-over-TLS query.
 
+        Reuses a pooled TLS connection per resolver to avoid handshake overhead
+        on every query. Connection is evicted from the pool on any error so the
+        next query gets a fresh connection.
+        """
         await self._ensure_async_primitives()
         assert self.semaphore is not None
 
@@ -556,43 +646,30 @@ class DNSQueryEngine:
                 async with self.semaphore:
                     start_time = time.time()
 
-                    # Build wire-format query with length prefix (RFC 7858)
                     qname = dns.name.from_text(domain)
                     rdtype = dns.rdatatype.from_text(record_type)
                     request = dns.message.make_query(qname, rdtype)
                     if self.enable_dnssec:
                         request.use_edns(ednsflags=dns.flags.DO)
                     wire = request.to_wire()
-                    # 2-byte length prefix required by DoT spec
+                    # 2-byte length prefix required by RFC 7858
                     prefixed = struct.pack("!H", len(wire)) + wire
 
-                    ssl_ctx = ssl.create_default_context()
-                    # enforce cert validation — never bypass for security tool
-                    ssl_ctx.verify_mode = ssl.CERT_REQUIRED
-                    ssl_ctx.check_hostname = True
+                    # Reuse pooled connection — no TLS handshake if already open
+                    reader, writer = await self._get_dot_connection(resolver_ip, port)
 
-                    reader, writer = await asyncio.wait_for(
-                        asyncio.open_connection(resolver_ip, port, ssl=ssl_ctx),
-                        timeout=self.timeout,
+                    writer.write(prefixed)
+                    await writer.drain()
+
+                    # Read 2-byte length prefix then full message
+                    raw_len = await asyncio.wait_for(
+                        reader.readexactly(2), timeout=self.timeout
                     )
-                    try:
-                        writer.write(prefixed)
-                        await writer.drain()
-
-                        # Read 2-byte length prefix then full message
-                        raw_len = await asyncio.wait_for(
-                            reader.readexactly(2), timeout=self.timeout
-                        )
-                        msg_len = struct.unpack("!H", raw_len)[0]
-                        raw_msg = await asyncio.wait_for(
-                            reader.readexactly(msg_len), timeout=self.timeout
-                        )
-                    finally:
-                        writer.close()
-                        try:
-                            await writer.wait_closed()
-                        except Exception:
-                            pass
+                    msg_len = struct.unpack("!H", raw_len)[0]
+                    raw_msg = await asyncio.wait_for(
+                        reader.readexactly(msg_len), timeout=self.timeout
+                    )
+                    # Do NOT close writer — connection is pooled and reused
 
                     end_time = time.time()
                     latency_ms = (end_time - start_time) * 1000
@@ -629,7 +706,10 @@ class DNSQueryEngine:
                     return result
 
             except asyncio.TimeoutError:
+                # Evict connection — may be in a bad state after timeout
+                self._dot_connections.pop(resolver_ip, None)
                 if attempt == self.max_retries:
+                    end_time = time.time()
                     async with self._lock:  # type: ignore[union-attr]
                         self.failed_resolvers[resolver_ip] += 1
                     result = DNSQueryResult(
@@ -638,8 +718,8 @@ class DNSQueryEngine:
                         domain=domain,
                         record_type=record_type,
                         start_time=start_time,
-                        end_time=time.time(),
-                        latency_ms=(time.time() - start_time) * 1000,
+                        end_time=end_time,
+                        latency_ms=(end_time - start_time) * 1000,
                         status=QueryStatus.TIMEOUT,
                         answers=[],
                         ttl=None,
@@ -656,7 +736,9 @@ class DNSQueryEngine:
                 )
 
             except ssl.SSLError as e:
-                # SSL errors are not retryable
+                # SSL errors are not retryable — evict and return immediately
+                self._dot_connections.pop(resolver_ip, None)
+                end_time = time.time()
                 async with self._lock:  # type: ignore[union-attr]
                     self.failed_resolvers[resolver_ip] += 1
                 result = DNSQueryResult(
@@ -665,9 +747,9 @@ class DNSQueryEngine:
                     domain=domain,
                     record_type=record_type,
                     start_time=start_time,
-                    end_time=time.time(),
-                    latency_ms=(time.time() - start_time) * 1000,
-                    status=QueryStatus.CONNECTION_REFUSED,
+                    end_time=end_time,
+                    latency_ms=(end_time - start_time) * 1000,
+                    status=QueryStatus.TLS_ERROR,
                     answers=[],
                     ttl=None,
                     error_message=f"TLS error: {e}",
@@ -680,7 +762,10 @@ class DNSQueryEngine:
                 return result
 
             except Exception as e:
+                # Evict connection on any unknown error before retrying
+                self._dot_connections.pop(resolver_ip, None)
                 if attempt == self.max_retries:
+                    end_time = time.time()
                     async with self._lock:  # type: ignore[union-attr]
                         self.failed_resolvers[resolver_ip] += 1
                     result = DNSQueryResult(
@@ -689,8 +774,8 @@ class DNSQueryEngine:
                         domain=domain,
                         record_type=record_type,
                         start_time=start_time,
-                        end_time=time.time(),
-                        latency_ms=(time.time() - start_time) * 1000,
+                        end_time=end_time,
+                        latency_ms=(end_time - start_time) * 1000,
                         status=QueryStatus.UNKNOWN_ERROR,
                         answers=[],
                         ttl=None,
@@ -758,11 +843,14 @@ class DNSQueryEngine:
         if not record_types:
             record_types = ["A"]
 
-        # Warmup handling (warmup_fast takes precedence)
+        # Warmup uses same protocol as benchmark so connection overhead is
+        # representative. warmup_fast takes precedence over warmup.
         if warmup_fast:
-            warmup_results = await self._run_fast_warmup(resolvers)
+            warmup_results = await self._run_fast_warmup(resolvers, protocol, doh_urls)
         elif warmup:
-            warmup_results = await self._run_warmup(resolvers, domains, record_types)
+            warmup_results = await self._run_warmup(
+                resolvers, domains, record_types, protocol, doh_urls
+            )
         else:
             warmup_results = []
 
@@ -775,7 +863,7 @@ class DNSQueryEngine:
                     )
                 )
 
-        # Reset counters for actual benchmark
+        # Reset counters after warmup so progress tracks benchmark queries only
         self.query_counter = 0
         self.total_queries = (
             len(resolvers) * len(domains) * len(record_types) * iterations
@@ -788,6 +876,12 @@ class DNSQueryEngine:
                     for record_type in record_types:
                         if protocol == QueryProtocol.DOH:
                             url = (doh_urls or {}).get(resolver["ip"], "")
+                            if not url:
+                                click.echo(
+                                    error(
+                                        f"No DoH URL configured for resolver {resolver['ip']} ({resolver['name']})"
+                                    )
+                                )
                             task = self.query_single_doh(
                                 resolver_ip=resolver["ip"],
                                 resolver_name=resolver["name"],
@@ -823,6 +917,8 @@ class DNSQueryEngine:
         resolvers: List[Dict[str, str]],
         domains: List[str],
         record_types: List[str],
+        protocol: QueryProtocol = QueryProtocol.PLAIN,
+        doh_urls: Optional[Dict[str, str]] = None,
     ) -> List[DNSQueryResult]:
         """Run full warmup queries (all combinations).
 
@@ -832,39 +928,80 @@ class DNSQueryEngine:
         for resolver in resolvers:
             for domain in domains:
                 for record_type in record_types:
-                    task = self.query_single(
-                        resolver_ip=resolver["ip"],
-                        resolver_name=resolver["name"],
-                        domain=domain,
-                        record_type=record_type,
-                        use_cache=False,
-                        iteration=0,  # Mark as warmup
-                    )
+                    if protocol == QueryProtocol.DOH:
+                        url = (doh_urls or {}).get(resolver["ip"], "")
+                        task = self.query_single_doh(
+                            resolver_ip=resolver["ip"],
+                            resolver_name=resolver["name"],
+                            domain=domain,
+                            doh_url=url,
+                            record_type=record_type,
+                            iteration=0,  # Mark as warmup
+                        )
+                    elif protocol == QueryProtocol.DOT:
+                        task = self.query_single_dot(
+                            resolver_ip=resolver["ip"],
+                            resolver_name=resolver["name"],
+                            domain=domain,
+                            record_type=record_type,
+                            iteration=0,
+                        )
+                    else:
+                        task = self.query_single(
+                            resolver_ip=resolver["ip"],
+                            resolver_name=resolver["name"],
+                            domain=domain,
+                            record_type=record_type,
+                            use_cache=False,
+                            iteration=0,
+                        )
                     tasks.append(task)
         return await asyncio.gather(*tasks)
 
     async def _run_fast_warmup(
         self,
         resolvers: List[Dict[str, str]],
+        protocol: QueryProtocol = QueryProtocol.PLAIN,
+        doh_urls: Optional[Dict[str, str]] = None,
         probe_domain: str = "example.com",
         record_type: str = "A",
     ) -> List[DNSQueryResult]:
         """Lightweight warmup: one query per resolver.
 
         Uses a known-good domain to verify resolver connectivity.
+        Respects the active protocol so warmup overhead matches benchmark overhead.
         Does not update progress counters or cache results.
         """
-        tasks = [
-            self.query_single(
-                resolver_ip=r["ip"],
-                resolver_name=r["name"],
-                domain=probe_domain,
-                record_type=record_type,
-                use_cache=False,
-                iteration=0,  # Mark as warmup
-            )
-            for r in resolvers
-        ]
+        tasks = []
+        for r in resolvers:
+            if protocol == QueryProtocol.DOH:
+                url = (doh_urls or {}).get(r["ip"], "")
+                task = self.query_single_doh(
+                    resolver_ip=r["ip"],
+                    resolver_name=r["name"],
+                    domain=probe_domain,
+                    doh_url=url,
+                    record_type=record_type,
+                    iteration=0,  # Mark as warmup
+                )
+            elif protocol == QueryProtocol.DOT:
+                task = self.query_single_dot(
+                    resolver_ip=r["ip"],
+                    resolver_name=r["name"],
+                    domain=probe_domain,
+                    record_type=record_type,
+                    iteration=0,
+                )
+            else:
+                task = self.query_single(
+                    resolver_ip=r["ip"],
+                    resolver_name=r["name"],
+                    domain=probe_domain,
+                    record_type=record_type,
+                    use_cache=False,
+                    iteration=0,
+                )
+            tasks.append(task)
         return await asyncio.gather(*tasks)
 
     def clear_cache(self) -> None:
@@ -1277,7 +1414,10 @@ class ResolverManager:
             {"name": "Google", "ip": "8.8.8.8"},
             {"name": "Quad9", "ip": "9.9.9.9"},
             {"name": "OpenDNS", "ip": "208.67.222.222"},
-            {"name": "Comodo", "ip": "8.26.56.26"},
+            # No doh endpoints for these, so commented out for now.
+            # If you know valid DoH URLs,
+            # please open a Pull Request to add them back in.
+            # {"name": "Comodo", "ip": "8.26.56.26"},
         ]
 
     @staticmethod

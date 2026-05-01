@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 import time
 from datetime import datetime
@@ -15,6 +16,7 @@ from dns_benchmark import __version__
 from dns_benchmark.analysis import BenchmarkAnalyzer
 from dns_benchmark.core import (
     DNSQueryEngine,
+    DNSQueryResult,
     DomainManager,
     QueryProtocol,
     QueryStatus,
@@ -489,8 +491,23 @@ def benchmark(
     except Exception as e:
         click.echo(error(f"Error loading domains: {e}"))
         return
+
     # New
-    if dnssec_validate:
+    try:
+        protocol, doh_urls = _resolve_protocol_and_doh_urls(
+            doh=doh,
+            dot=dot,
+            doh_url=doh_url,
+            resolvers=resolver_list,
+        )
+    except click.UsageError:
+        raise
+
+    # New
+    # Only warn about DNSSEC-signed domains when using defaults — for custom
+    # domain files we have no way to know which are signed without querying,
+    # so stay silent to avoid noisy false-positive warnings.
+    if dnssec_validate and use_defaults:
         signed = {
             d["domain"]
             for d in DomainManager.DOMAINS_DATABASE
@@ -525,15 +542,20 @@ def benchmark(
         click.echo(info(f"- Total queries: {total_queries}"))
         if use_cache:
             click.echo(info("- Cache enabled: queries may be reused across iterations"))
+
         # New
         if protocol != QueryProtocol.PLAIN:
             click.echo(info(f"- Protocol: {protocol.value.upper()}"))
+
         if dnssec_validate:
             click.echo(
-                info("- DNSSEC validation: enforced (queries fail if AD flag absent)")
+                info(
+                    "- DNSSEC: enforced — DO bit set, AD flag required "
+                    "(note: success rate reflects network success, not DNSSEC outcome)"
+                )
             )
         else:
-            click.echo(info("- DNSSEC: passive (AD flag collected, not enforced)"))
+            click.echo(info("- DNSSEC: off (DO bit not set, AD flag not collected)"))
 
     # Show warmup message
     if (warmup or warmup_fast) and not quiet:
@@ -549,6 +571,7 @@ def benchmark(
     feedback_manager.increment_run()
 
     start_time = time.time()
+
     # New
     try:
         engine = DNSQueryEngine(
@@ -556,7 +579,11 @@ def benchmark(
             timeout=timeout,
             max_retries=retries,
             enable_cache=use_cache,
-            enable_dnssec=True,  # always collect AD flag - always True
+            # DO bit is only set when --dnssec-validate is passed.
+            # enable_dnssec=True sets the DO bit (requests RRSIG records).
+            # enforce_dnssec=True fails queries where the AD flag is absent.
+            # Both are off by default to avoid latency overhead on normal benchmarks.
+            enable_dnssec=dnssec_validate,
             enforce_dnssec=dnssec_validate,
         )
 
@@ -579,9 +606,10 @@ def benchmark(
                     pass
 
             engine.set_progress_callback(_progress_cb)
-        # New
-        results = asyncio.run(
-            engine.run_benchmark(
+
+        # Single coroutine to avoid closed event loop from two asyncio.run calls
+        async def _run() -> List[DNSQueryResult]:
+            results = await engine.run_benchmark(
                 resolvers=resolver_list,
                 domains=domain_list,
                 record_types=record_type_list,
@@ -592,7 +620,10 @@ def benchmark(
                 protocol=protocol,
                 doh_urls=doh_urls,
             )
-        )
+            await engine.close()
+            return results
+
+        results = asyncio.run(_run())
 
         if progress_bar:
             progress_bar.close()
@@ -616,7 +647,7 @@ def benchmark(
                 f"Fastest resolver: {overall_stats['fastest_resolver']}",
                 f"Slowest resolver: {overall_stats['slowest_resolver']}",
                 f"Protocol: {protocol.value.upper()}",
-                f"DNSSEC validated: {sum(1 for r in results if r.dnssec_validated)} / {len(results)} queries",
+                f"DNSSEC AD validated: {sum(1 for r in results if r.dnssec_validated)} / {len(results)} queries",
             ]
             # Add iteration info if multiple iterations
             if iterations > 1:
@@ -697,8 +728,11 @@ def benchmark(
                     )
                     if export_progress:
                         export_progress.update(1)
-                except RuntimeError as e:
-                    click.echo(error(f"Error during benchmark: {e}"))
+                except Exception as e:
+                    # PDF export is non-fatal — warn and keep progress consistent
+                    click.echo(error(f"PDF export failed: {e}"))
+                    if export_progress:
+                        export_progress.update(1)
 
             # JSON export now tracked in progress
             if json_output:
@@ -721,7 +755,8 @@ def benchmark(
         finally:
             if export_progress:
                 export_progress.close()
-
+    except click.UsageError:
+        raise
     except KeyboardInterrupt:
         click.echo(warning("\nBenchmark interrupted by user"))
         # Still show feedback prompt since benchmark was started
@@ -743,7 +778,19 @@ def benchmark(
 
 # ====================== Top Resolvers Command
 @cli.command()
-# --------
+@click.option("--doh", is_flag=True, default=False, help="Use DNS-over-HTTPS.")
+@click.option("--dot", is_flag=True, default=False, help="Use DNS-over-TLS.")
+@click.option(
+    "--doh-url",
+    default=None,
+    help="Comma-separated DoH URLs, one per resolver (required if resolver not in db).",
+)
+@click.option(
+    "--dnssec-validate",
+    is_flag=True,
+    default=False,
+    help="Fail queries where DNSSEC AD flag is not set.",
+)
 @click.option("--limit", "-n", default=10, help="Number of top resolvers to display")
 @click.option(
     "--metric",
@@ -771,6 +818,10 @@ def benchmark(
 )
 @click.option("--quiet", is_flag=True, help="Suppress progress output")
 def top(
+    doh: bool,
+    dot: bool,
+    doh_url: Optional[str],
+    dnssec_validate: bool,
     limit: int,
     metric: str,
     domains: Optional[str],
@@ -808,16 +859,15 @@ def top(
                 )
             )
     else:
-        # Use all available resolvers for comprehensive ranking
         all_resolvers = ResolverManager.get_all_resolvers()
         resolver_list = [{"name": r["name"], "ip": r["ip"]} for r in all_resolvers]
         if not quiet:
             click.echo(success(f"Testing {len(resolver_list)} resolvers"))
 
-    # Get domains
+    # Get domains — supports both file path and inline comma-separated list
     if domains:
         try:
-            domain_list = DomainManager.load_domains_from_file(domains)
+            domain_list = DomainManager.parse_domains_input(domains)
         except Exception as e:
             click.echo(error(f"Error loading domains: {e}"))
             return
@@ -827,10 +877,31 @@ def top(
     # Parse record types
     record_type_list = [rt.strip().upper() for rt in record_types.split(",")]
 
-    # Run benchmark
+    # Resolve protocol and DoH URLs early — fail fast before any queries
+    try:
+        protocol, doh_urls = _resolve_protocol_and_doh_urls(
+            doh=doh,
+            dot=dot,
+            doh_url=doh_url,
+            resolvers=resolver_list,
+        )
+    except click.UsageError:
+        raise
+
     total_queries = len(resolver_list) * len(domain_list) * len(record_type_list)
     if not quiet:
         click.echo(info(f"Running {total_queries} queries..."))
+        if protocol != QueryProtocol.PLAIN:
+            click.echo(info(f"Protocol: {protocol.value.upper()}"))
+        if dnssec_validate:
+            click.echo(
+                info(
+                    "DNSSEC: enforced — DO bit set, AD flag required "
+                    "(note: success rate reflects network success, not DNSSEC outcome)"
+                )
+            )
+        else:
+            click.echo(info("DNSSEC: off (DO bit not set, AD flag not collected)"))
 
     progress_bar = None
     if not quiet:
@@ -841,6 +912,8 @@ def top(
             max_concurrent_queries=max_concurrent,
             timeout=timeout,
             enable_cache=False,
+            enable_dnssec=dnssec_validate,
+            enforce_dnssec=dnssec_validate,
         )
 
         if progress_bar:
@@ -855,28 +928,31 @@ def top(
 
             engine.set_progress_callback(_progress_cb)
 
-        results = asyncio.run(
-            engine.run_benchmark(
+        # Single coroutine to avoid closed event loop from two asyncio.run calls
+        async def _run() -> List[DNSQueryResult]:
+            results = await engine.run_benchmark(
                 resolvers=resolver_list,
                 domains=domain_list,
                 record_types=record_type_list,
                 warmup_fast=True,
+                protocol=protocol,
+                doh_urls=doh_urls,
             )
-        )
+            await engine.close()
+            return results
+
+        results = asyncio.run(_run())
 
         if progress_bar:
             progress_bar.close()
 
         duration = time.time() - start_time
-
         if not quiet:
             click.echo(success(f"Benchmark completed in {duration:.2f} seconds"))
 
         # Analyze and rank
         analyzer = BenchmarkAnalyzer(results)
         resolver_stats_list = analyzer.get_resolver_statistics()
-
-        # Convert list of ResolverStats objects to dict for easier lookup
         resolver_stats = {stats.resolver_name: stats for stats in resolver_stats_list}
 
         # Calculate ranking score based on metric
@@ -886,13 +962,10 @@ def top(
                 if stats.successful_queries > 0 and stats.avg_latency is not None:
                     score = -stats.avg_latency
                 else:
-                    score = float("-inf")  # push failed resolvers to bottom
-
+                    score = float("-inf")
             elif metric == "success":
-                # Higher is better
                 score = stats.success_rate
             else:  # reliability (combined)
-                # Weighted score: 60% success rate, 40% speed (normalized)
                 if stats.successful_queries > 0 and stats.avg_latency not in (None, 0):
                     latency_score = max(0, 100 - (stats.avg_latency / 5))
                     score = (stats.success_rate * 0.6) + (latency_score * 0.4)
@@ -901,10 +974,7 @@ def top(
 
             scored_resolvers.append((name, stats, score))
 
-        # Sort by score (descending)
         scored_resolvers.sort(key=lambda x: x[2], reverse=True)
-
-        # Display top N
         top_resolvers = scored_resolvers[:limit]
 
         if not quiet:
@@ -918,7 +988,6 @@ def top(
                     if rank == 1
                     else "🥈" if rank == 2 else "🥉" if rank == 3 else f"{rank}."
                 )
-
                 click.echo(Fore.CYAN + f"{medal} {name}" + Style.RESET_ALL)
                 latency_str = (
                     f"{stats.avg_latency:.2f} ms"
@@ -934,7 +1003,6 @@ def top(
                 click.echo(
                     f"   Queries: {stats.successful_queries}/{stats.total_queries}"
                 )
-
                 if metric == "reliability":
                     click.echo(
                         f"   Reliability Score: {Fore.YELLOW}{score:.2f}/100{Style.RESET_ALL}"
@@ -951,6 +1019,7 @@ def top(
                     "timestamp": datetime.now().isoformat(),
                     "metric": metric,
                     "category": category,
+                    "protocol": protocol.value,
                     "top_resolvers": [
                         {
                             "rank": i + 1,
@@ -959,7 +1028,6 @@ def top(
                             "success_rate": stats.success_rate,
                             "successful_queries": stats.successful_queries,
                             "total_queries": stats.total_queries,
-                            # "score": score,
                         }
                         for i, (name, stats, score) in enumerate(top_resolvers)
                     ],
@@ -980,7 +1048,6 @@ def top(
                             "Success Rate (%)",
                             "Successful",
                             "Total",
-                            # "Score"
                         ]
                     )
                     for i, (name, stats, score) in enumerate(top_resolvers, 1):
@@ -996,7 +1063,6 @@ def top(
                                 f"{stats.success_rate:.1f}",
                                 stats.successful_queries,
                                 stats.total_queries,
-                                # f"{score:.2f}"
                             ]
                         )
 
@@ -1009,7 +1075,6 @@ def top(
                     if category:
                         f.write(f"Category: {category}\n")
                     f.write("\n" + "=" * 60 + "\n\n")
-
                     for rank, (name, stats, score) in enumerate(top_resolvers, 1):
                         f.write(f"{rank}. {name}\n")
                         f.write(
@@ -1021,10 +1086,8 @@ def top(
                         f.write(
                             f"   Queries: {stats.successful_queries}/{stats.total_queries}\n"
                         )
-                        # if metric == "reliability":
-                        #     f.write(f"   Score: {score:.2f}/100\n")
                         f.write("\n")
-            # Add summary note if any resolvers had no successful queries
+
             failed_resolvers = [
                 s for s in resolver_stats.values() if s.successful_queries == 0
             ]
@@ -1034,10 +1097,11 @@ def top(
                         "⚠️ Some resolvers returned no successful queries and were excluded from ranking"
                     )
                 )
-
             if not quiet:
                 click.echo(success(f"Results saved to: {output_path}"))
 
+    except click.UsageError:
+        raise
     except KeyboardInterrupt:
         if progress_bar:
             progress_bar.close()
@@ -1051,7 +1115,19 @@ def top(
 
 # ======================= Compare
 @cli.command()
-# ----------
+@click.option("--doh", is_flag=True, default=False, help="Use DNS-over-HTTPS.")
+@click.option("--dot", is_flag=True, default=False, help="Use DNS-over-TLS.")
+@click.option(
+    "--doh-url",
+    default=None,
+    help="Comma-separated DoH URLs, one per resolver (required if resolver not in db).",
+)
+@click.option(
+    "--dnssec-validate",
+    is_flag=True,
+    default=False,
+    help="Fail queries where DNSSEC AD flag is not set.",
+)
 @click.argument("resolvers", nargs=-1, required=True)
 @click.option("--domains", "-d", help="Text file with domain list")
 @click.option(
@@ -1067,6 +1143,10 @@ def top(
 @click.option("--quiet", is_flag=True, help="Suppress progress output")
 @click.option("--show-details", is_flag=True, help="Show detailed per-domain breakdown")
 def compare(
+    doh: bool,
+    dot: bool,
+    doh_url: Optional[str],
+    dnssec_validate: bool,
     resolvers: Tuple[str],
     domains: Optional[str],
     record_types: str,
@@ -1094,17 +1174,13 @@ def compare(
     resolver_list = []
 
     for resolver_input in resolvers:
-        # Try to match by name first
         matched = False
         for r in all_resolvers:
             if r["name"].lower() == resolver_input.lower():
                 resolver_list.append({"name": r["name"], "ip": r["ip"]})
                 matched = True
                 break
-
-        # If no name match, assume it's an IP
         if not matched:
-            # Validate IP format (basic check)
             if "." in resolver_input or ":" in resolver_input:
                 resolver_list.append({"name": resolver_input, "ip": resolver_input})
             else:
@@ -1119,10 +1195,10 @@ def compare(
             success(f"Comparing: {', '.join([r['name'] for r in resolver_list])}")
         )
 
-    # Get domains
+    # Get domains — supports both file path and inline comma-separated list
     if domains:
         try:
-            domain_list = DomainManager.load_domains_from_file(domains)
+            domain_list = DomainManager.parse_domains_input(domains)
         except Exception as e:
             click.echo(error(f"Error loading domains: {e}"))
             return
@@ -1132,7 +1208,17 @@ def compare(
     # Parse record types
     record_type_list = [rt.strip().upper() for rt in record_types.split(",")]
 
-    # Run benchmark
+    # Resolve protocol and DoH URLs early — fail fast before any queries
+    try:
+        protocol, doh_urls = _resolve_protocol_and_doh_urls(
+            doh=doh,
+            dot=dot,
+            doh_url=doh_url,
+            resolvers=resolver_list,
+        )
+    except click.UsageError:
+        raise
+
     total_queries = (
         len(resolver_list) * len(domain_list) * len(record_type_list) * iterations
     )
@@ -1140,6 +1226,17 @@ def compare(
         click.echo(
             info(f"Running {total_queries} queries across {iterations} iterations...")
         )
+        if protocol != QueryProtocol.PLAIN:
+            click.echo(info(f"Protocol: {protocol.value.upper()}"))
+        if dnssec_validate:
+            click.echo(
+                info(
+                    "DNSSEC: enforced — DO bit set, AD flag required "
+                    "(note: success rate reflects network success, not DNSSEC outcome)"
+                )
+            )
+        else:
+            click.echo(info("DNSSEC: off (DO bit not set, AD flag not collected)"))
 
     progress_bar = None
     if not quiet:
@@ -1150,6 +1247,8 @@ def compare(
             max_concurrent_queries=max_concurrent,
             timeout=timeout,
             enable_cache=False,
+            enable_dnssec=dnssec_validate,
+            enforce_dnssec=dnssec_validate,
         )
 
         if progress_bar:
@@ -1164,15 +1263,21 @@ def compare(
 
             engine.set_progress_callback(_progress_cb)
 
-        results = asyncio.run(
-            engine.run_benchmark(
+        # Single coroutine to avoid closed event loop from two asyncio.run calls
+        async def _run() -> List[DNSQueryResult]:
+            results = await engine.run_benchmark(
                 resolvers=resolver_list,
                 domains=domain_list,
                 record_types=record_type_list,
                 iterations=iterations,
                 warmup_fast=True,
+                protocol=protocol,
+                doh_urls=doh_urls,
             )
-        )
+            await engine.close()
+            return results
+
+        results = asyncio.run(_run())
 
         if progress_bar:
             progress_bar.close()
@@ -1180,15 +1285,11 @@ def compare(
         # Analyze
         analyzer = BenchmarkAnalyzer(results)
         resolver_stats_list = analyzer.get_resolver_statistics()
-
-        # Convert list of ResolverStats objects to dict for easier lookup
         resolver_stats = {stats.resolver_name: stats for stats in resolver_stats_list}
 
-        # Display comparison
         if not quiet:
             click.echo(success("📊 Comparison Results:\n"))
 
-            # Header
             click.echo(
                 Fore.CYAN
                 + f"{'Resolver':<20} {'Avg Latency':<15} {'Success Rate':<15} {'Queries':<10}"
@@ -1196,9 +1297,14 @@ def compare(
             )
             click.echo("-" * 65)
 
-            # Sort by latency for display
+            # Guard against nan avg_latency from resolvers with zero successes
             sorted_stats = sorted(
-                resolver_stats.items(), key=lambda x: x[1].avg_latency
+                resolver_stats.items(),
+                key=lambda x: (
+                    x[1].avg_latency
+                    if x[1].avg_latency is not None and not math.isnan(x[1].avg_latency)
+                    else float("inf")
+                ),
             )
 
             for name, stats in sorted_stats:
@@ -1212,7 +1318,6 @@ def compare(
                     if stats.success_rate >= 95
                     else Fore.YELLOW if stats.success_rate >= 80 else Fore.RED
                 )
-
                 click.echo(
                     f"{name:<20} "
                     f"{latency_color}{stats.avg_latency:>6.2f} ms{Style.RESET_ALL}{'':>4} "
@@ -1220,7 +1325,6 @@ def compare(
                     f"{stats.successful_queries}/{stats.total_queries}"
                 )
 
-            # Winner
             click.echo()
             fastest = min(sorted_stats, key=lambda x: x[1].avg_latency)
             most_reliable = max(sorted_stats, key=lambda x: x[1].success_rate)
@@ -1238,17 +1342,15 @@ def compare(
                 + f"{most_reliable[0]} ({most_reliable[1].success_rate:.1f}%)"
             )
 
-            # Per-domain details if requested
             if show_details:
                 click.echo(success("📋 Per-Domain Breakdown:\n"))
                 domain_stats = analyzer.get_domain_statistics()
 
-                for dom_stat in domain_stats[:10]:  # Limit to first 10
+                for dom_stat in domain_stats[:10]:
                     domain = dom_stat["domain"]
                     click.echo(Fore.CYAN + f"\n{domain}:" + Style.RESET_ALL)
 
                     for name in [r["name"] for r in resolver_list]:
-                        # Find results for this resolver+domain
                         domain_results = [
                             r
                             for r in results
@@ -1273,11 +1375,10 @@ def compare(
             ext = output_path.suffix.lower()
 
             if ext == ".json":
-                import json
-
                 export_data = {
                     "timestamp": datetime.now().isoformat(),
                     "iterations": iterations,
+                    "protocol": protocol.value,
                     "comparison": [
                         {
                             "resolver": name,
@@ -1292,13 +1393,14 @@ def compare(
                 }
                 with open(output_path, "w") as f:
                     json.dump(export_data, f, indent=2)
-
-            else:  # csv
+            else:
                 CSVExporter.export_summary_statistics(analyzer, str(output_path))
 
             if not quiet:
                 click.echo(success(f"Comparison saved to: {output_path}"))
 
+    except click.UsageError:
+        raise
     except KeyboardInterrupt:
         if progress_bar:
             progress_bar.close()
@@ -1312,7 +1414,19 @@ def compare(
 
 # ==================== Monitoring Command
 @cli.command()
-# ---------
+@click.option("--doh", is_flag=True, default=False, help="Use DNS-over-HTTPS.")
+@click.option("--dot", is_flag=True, default=False, help="Use DNS-over-TLS.")
+@click.option(
+    "--doh-url",
+    default=None,
+    help="Comma-separated DoH URLs, one per resolver (required if resolver not in db).",
+)
+@click.option(
+    "--dnssec-validate",
+    is_flag=True,
+    default=False,
+    help="Fail queries where DNSSEC AD flag is not set.",
+)
 @click.option("--resolvers", "-r", help="JSON file with resolver list")
 @click.option("--domains", "-d", help="Text file with domain list")
 @click.option(
@@ -1341,6 +1455,10 @@ def compare(
     "--use-defaults", is_flag=True, help="Use default resolvers and sample domains"
 )
 def monitoring(
+    doh: bool,
+    dot: bool,
+    doh_url: Optional[str],
+    dnssec_validate: bool,
     resolvers: Optional[str],
     domains: Optional[str],
     interval: int,
@@ -1368,7 +1486,7 @@ def monitoring(
         click.echo(success(f"Monitoring {len(resolver_list)} default resolvers"))
     elif resolvers:
         try:
-            resolver_list = ResolverManager.load_resolvers_from_file(resolvers)
+            resolver_list = ResolverManager.parse_resolvers_input(resolvers)
             click.echo(success(f"Monitoring {len(resolver_list)} resolvers"))
         except Exception as e:
             click.echo(error(f"Error loading resolvers: {e}"))
@@ -1379,25 +1497,40 @@ def monitoring(
 
     # Load domains
     if use_defaults:
-        # Use a smaller set for monitoring
         domain_list = DomainManager.get_sample_domains()[:5]
     elif domains:
         try:
-            domain_list = DomainManager.load_domains_from_file(domains)
+            domain_list = DomainManager.parse_domains_input(domains)
         except Exception as e:
             click.echo(error(f"Error loading domains: {e}"))
             return
     else:
         domain_list = DomainManager.get_sample_domains()[:5]
 
+    # Resolve protocol and DoH URLs early — fail fast before monitoring starts
+    try:
+        protocol, doh_urls = _resolve_protocol_and_doh_urls(
+            doh=doh,
+            dot=dot,
+            doh_url=doh_url,
+            resolvers=resolver_list,
+        )
+    except click.UsageError:
+        raise
+
     click.echo(info(f"Testing against {len(domain_list)} domains"))
     click.echo(info(f"Check interval: {interval}s"))
     if duration > 0:
         click.echo(info(f"Duration: {duration}s"))
+    if protocol != QueryProtocol.PLAIN:
+        click.echo(info(f"Protocol: {protocol.value.upper()}"))
+    if dnssec_validate:
+        click.echo(info("DNSSEC: enforced (AD flag required)"))
+    else:
+        click.echo(info("DNSSEC: off"))
     click.echo(info(f"Latency alert threshold: {alert_latency} ms"))
     click.echo(info(f"Failure rate alert threshold: {alert_failure_rate}%\n"))
 
-    # Setup output log
     log_file = None
     if output:
         log_file = open(output, "a")
@@ -1410,71 +1543,77 @@ def monitoring(
     start_time = time.time()
     iteration = 0
 
+    # Engine is created once outside the loop so DoT/DoH connections are
+    # reused across check intervals — avoids repeated TLS handshakes every check
+    engine = DNSQueryEngine(
+        max_concurrent_queries=50,
+        timeout=5.0,
+        enable_cache=False,
+        enable_dnssec=dnssec_validate,
+        enforce_dnssec=dnssec_validate,
+    )
+
     try:
         while True:
             iteration += 1
             check_time = datetime.now().strftime("%H:%M:%S")
-
             click.echo(
                 Fore.CYAN + f"[{check_time}] Check #{iteration}" + Style.RESET_ALL
             )
 
-            # Run quick benchmark
-            engine = DNSQueryEngine(
-                max_concurrent_queries=50,
-                timeout=5.0,
-                enable_cache=False,
-            )
-
-            results = asyncio.run(
-                engine.run_benchmark(
+            async def _run() -> List[DNSQueryResult]:
+                results = await engine.run_benchmark(
                     resolvers=resolver_list,
                     domains=domain_list,
                     record_types=["A"],
                     warmup=False,
+                    protocol=protocol,
+                    doh_urls=doh_urls,
                 )
-            )
+                # Do NOT close engine here — it is reused on next interval
+                return results
 
-            # Analyze
+            results = asyncio.run(_run())
+
             analyzer = BenchmarkAnalyzer(results)
             resolver_stats_list = analyzer.get_resolver_statistics()
 
-            # Check for alerts
             alerts = []
             for stats in resolver_stats_list:
-                if stats.avg_latency > alert_latency:
+                if stats.avg_latency and stats.avg_latency > alert_latency:
                     alerts.append(
                         f"⚠️  {stats.resolver_name}: High latency ({stats.avg_latency:.2f} ms)"
                     )
-
                 failure_rate = 100 - stats.success_rate
                 if failure_rate > alert_failure_rate:
                     alerts.append(
                         f"⚠️  {stats.resolver_name}: High failure rate ({failure_rate:.1f}%)"
                     )
 
-            # Display results
             for stats in resolver_stats_list:
                 latency_indicator = (
                     "🟢"
-                    if stats.avg_latency < 50
-                    else "🟡" if stats.avg_latency < 100 else "🔴"
+                    if stats.avg_latency and stats.avg_latency < 50
+                    else "🟡" if stats.avg_latency and stats.avg_latency < 100 else "🔴"
                 )
                 success_indicator = (
                     "🟢"
                     if stats.success_rate >= 95
                     else "🟡" if stats.success_rate >= 80 else "🔴"
                 )
-
-                status_line = f"  {stats.resolver_name:<20} {latency_indicator} {stats.avg_latency:>6.2f} ms  {success_indicator} {stats.success_rate:>5.1f}%"
+                status_line = (
+                    f"  {stats.resolver_name:<20} "
+                    f"{latency_indicator} {stats.avg_latency:>6.2f} ms  "
+                    f"{success_indicator} {stats.success_rate:>5.1f}%"
+                )
                 click.echo(status_line)
 
                 if log_file:
                     log_file.write(
-                        f"[{check_time}] {stats.resolver_name}: {stats.avg_latency:.2f} ms, {stats.success_rate:.1f}% success\n"
+                        f"[{check_time}] {stats.resolver_name}: "
+                        f"{stats.avg_latency:.2f} ms, {stats.success_rate:.1f}% success\n"
                     )
 
-            # Display alerts
             if alerts:
                 click.echo()
                 for alert in alerts:
@@ -1487,12 +1626,10 @@ def monitoring(
             if log_file:
                 log_file.flush()
 
-            # Check duration
             if duration > 0 and (time.time() - start_time) >= duration:
                 click.echo(success("Monitoring duration completed"))
                 break
 
-            # Wait for next interval
             time.sleep(interval)
 
     except KeyboardInterrupt:
@@ -1501,6 +1638,13 @@ def monitoring(
         click.echo(error(f"Error during monitoring: {e}"))
         raise
     finally:
+        # Use a fresh event loop for cleanup since the previous one may be closed
+        try:
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(engine.close())
+            loop.close()
+        except Exception:
+            pass  # best-effort cleanup — don't crash on exit
         if log_file:
             log_file.write(
                 f"Monitoring ended: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"

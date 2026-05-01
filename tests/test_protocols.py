@@ -276,7 +276,7 @@ async def test_query_single_dot_tls_error(engine: DNSQueryEngine) -> None:
             domain="google.com",
         )
 
-    assert result.status == QueryStatus.CONNECTION_REFUSED
+    assert result.status == QueryStatus.TLS_ERROR
     assert result.protocol == QueryProtocol.DOT
     assert "TLS error" in (result.error_message or "")
 
