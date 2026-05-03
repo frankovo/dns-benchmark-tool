@@ -22,9 +22,7 @@ dns-benchmark benchmark --use-defaults --formats csv,excel
 *Watch DNS queries in motion*
 
 **Real Time Tracking - Web UI**
-<video src="https://github.com/frankovo/dns-benchmark-tool/raw/main/docs/BuildTools_DNS_Test_Demo.mp4" autoplay loop muted playsinline>
-  <img src="docs/BuildTools_DNS_Test_Demo_fallback.png" alt="Real Time Tracking - Web UI">
-</video>
+[![Real Time Tracking - Web UI](docs/BuildTools_DNS_Test_Demo.gif)](https://github.com/frankovo/dns-benchmark-tool)
 *Monitor DNS queries live with email alerts*
 
 </div>
