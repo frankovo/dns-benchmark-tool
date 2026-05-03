@@ -1,3 +1,23 @@
+## v1.0.0 (2026-05-03)
+
+### Feat
+
+- **cli**: feat(cli): add --doh, --dot, --doh-url, --dnssec-validate to benchmark command
+- **exporters**: feat(exporters): surface protocol and dnssec data in all export formats
+- **analysis**: feat(analysis): add protocol and dnssec stats to benchmark analyzer
+- **core**: feat(core): add doh, dot, dnssec support to query engine
+
+### Fix
+
+- **cli**: address TODO in cli
+- **cli**: fix(cli): doh, dot, dnssec support for all commands, connection cleanup, and UX fixes
+- **analysis**: fix(analysis): include DNSSEC_FAILED queries in latency stats and fix typo
+
+### Refactor
+
+- **cli**: remove feedback mechanism and unnecessary comments
+- **core**: refactor(core): pool DoH/DoT connections and fix protocol/DNSSEC handling
+
 ## v0.3.5 (2026-03-14)
 
 ### Fix
