@@ -13,14 +13,11 @@ import pytest
 from click.testing import CliRunner
 
 from dns_benchmark.cli import (
-    FeedbackManager,
+    _resolve_protocol_and_doh_urls,
     cli,
     create_progress_bar,
-    feedback,
-    reset_feedback,
-    show_feedback_prompt,
 )
-from dns_benchmark.core import DNSQueryResult, QueryStatus
+from dns_benchmark.core import DNSQueryResult, QueryProtocol, QueryStatus
 
 
 @pytest.fixture
@@ -35,6 +32,138 @@ def temp_config_dir(monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: Path(tmpdir.name))
     yield Path(tmpdir.name)
     tmpdir.cleanup()
+
+
+def test_protocol_plain():
+    """Neither --doh nor --dot -> plain DNS, empty URL map."""
+    protocol, url_map = _resolve_protocol_and_doh_urls(
+        doh=False, dot=False, doh_url=None, resolvers=[]
+    )
+    assert protocol == QueryProtocol.PLAIN
+    assert url_map == {}
+
+
+def test_protocol_dot():
+    """--dot -> DoT protocol, empty URL map."""
+    protocol, url_map = _resolve_protocol_and_doh_urls(
+        doh=False, dot=True, doh_url=None, resolvers=[]
+    )
+    assert protocol == QueryProtocol.DOT
+    assert url_map == {}
+
+
+def test_protocol_mutual_exclusion():
+    """--doh and --dot together raise UsageError."""
+    with pytest.raises(
+        click.UsageError, match="--doh and --dot are mutually exclusive."
+    ):
+        _resolve_protocol_and_doh_urls(doh=True, dot=True, doh_url=None, resolvers=[])
+
+
+def test_doh_explicit_urls():
+    """--doh with --doh-url list matching resolver count."""
+    resolvers = [
+        {"name": "Google", "ip": "8.8.8.8"},
+        {"name": "Cloudflare", "ip": "1.1.1.1"},
+    ]
+    doh_url = "https://dns.google/dns-query, https://cloudflare-dns.com/dns-query"
+    protocol, url_map = _resolve_protocol_and_doh_urls(
+        doh=True, dot=False, doh_url=doh_url, resolvers=resolvers
+    )
+    assert protocol == QueryProtocol.DOH
+    assert url_map == {
+        "8.8.8.8": "https://dns.google/dns-query",
+        "1.1.1.1": "https://cloudflare-dns.com/dns-query",
+    }
+
+
+def test_doh_url_length_mismatch():
+    """Number of explicit URLs must match resolver count."""
+    resolvers = [
+        {"name": "Google", "ip": "8.8.8.8"},
+        {"name": "Cloudflare", "ip": "1.1.1.1"},
+    ]
+    with pytest.raises(
+        click.UsageError,
+        match="--doh-url has 1 URL\\(s\\) but --resolvers has 2 resolver\\(s\\). Counts must match.",
+    ):
+        _resolve_protocol_and_doh_urls(
+            doh=True,
+            dot=False,
+            doh_url="https://dns.google/dns-query",
+            resolvers=resolvers,
+        )
+
+
+def test_doh_fallback_to_database(monkeypatch):
+    """Use doh_url from RESOLVERS_DATABASE when --doh-url is omitted."""
+    # Mock the internal resolver database
+    fake_db = [
+        {"ip": "8.8.8.8", "name": "Google", "doh_url": "https://dns.google/dns-query"},
+        {
+            "ip": "1.1.1.1",
+            "name": "Cloudflare",
+            "doh_url": "https://cloudflare-dns.com/dns-query",
+        },
+    ]
+    monkeypatch.setattr("dns_benchmark.cli.ResolverManager.RESOLVERS_DATABASE", fake_db)
+
+    resolvers = [
+        {"name": "Google", "ip": "8.8.8.8"},
+        {"name": "Cloudflare", "ip": "1.1.1.1"},
+    ]
+    protocol, url_map = _resolve_protocol_and_doh_urls(
+        doh=True, dot=False, doh_url=None, resolvers=resolvers
+    )
+    assert protocol == QueryProtocol.DOH
+    assert url_map == {
+        "8.8.8.8": "https://dns.google/dns-query",
+        "1.1.1.1": "https://cloudflare-dns.com/dns-query",
+    }
+
+
+def test_doh_fallback_missing_url(monkeypatch):
+    """Resolver without doh_url in database raises error."""
+    fake_db = [
+        {"ip": "8.8.8.8", "name": "Google", "doh_url": "https://dns.google/dns-query"},
+        {"ip": "9.9.9.9", "name": "Quad9"},  # No doh_url
+    ]
+    monkeypatch.setattr("dns_benchmark.cli.ResolverManager.RESOLVERS_DATABASE", fake_db)
+
+    resolvers = [
+        {"name": "Google", "ip": "8.8.8.8"},
+        {"name": "Quad9", "ip": "9.9.9.9"},
+    ]
+    with pytest.raises(
+        click.UsageError,
+        match="--doh requires a DoH URL for: Quad9. Use --doh-url to supply them explicitly.",
+    ):
+        _resolve_protocol_and_doh_urls(
+            doh=True, dot=False, doh_url=None, resolvers=resolvers
+        )
+
+
+def test_doh_fallback_resolver_not_in_db(monkeypatch):
+    """Resolver not found in database at all raises error (missing doh_url)."""
+    fake_db = [
+        {
+            "ip": "1.1.1.1",
+            "name": "Cloudflare",
+            "doh_url": "https://cloudflare-dns.com/dns-query",
+        },
+    ]
+    monkeypatch.setattr("dns_benchmark.cli.ResolverManager.RESOLVERS_DATABASE", fake_db)
+
+    resolvers = [
+        {"name": "Unknown", "ip": "192.0.2.1"},
+    ]
+    with pytest.raises(
+        click.UsageError,
+        match="--doh requires a DoH URL for: Unknown. Use --doh-url to supply them explicitly.",
+    ):
+        _resolve_protocol_and_doh_urls(
+            doh=True, dot=False, doh_url=None, resolvers=resolvers
+        )
 
 
 def test_cli_configuration_and_warmup(monkeypatch):
@@ -82,78 +211,6 @@ def test_cli_configuration_and_warmup(monkeypatch):
     assert "Configuration:" in result.output
     assert "Running full warmup queries..." in result.output
     assert "=== BENCHMARK SUMMARY ===" in result.output
-
-
-# def test_benchmark_exports_csv_excel_pdf_json(tmp_path, sample_results):
-#     runner = CliRunner()
-#     outdir = tmp_path / "results"
-
-#     # Patch run_benchmark to return our sample results, avoiding network
-#     with patch(
-#         "dns_benchmark.core.DNSQueryEngine.run_benchmark", return_value=sample_results
-#     ):
-#         # Also patch default resolvers/domains to keep totals small
-#         with (
-#             patch(
-#                 "dns_benchmark.core.ResolverManager.get_default_resolvers",
-#                 return_value=[
-#                     {"name": "Cloudflare", "ip": "1.1.1.1"},
-#                     {"name": "Google", "ip": "8.8.8.8"},
-#                 ],
-#             ),
-#             patch(
-#                 "dns_benchmark.core.DomainManager.get_sample_domains",
-#                 return_value=["example.com", "bad-domain.test"],
-#             ),
-#         ):
-#             result = runner.invoke(
-#                 cli,
-#                 [
-#                     "benchmark",
-#                     "--use-defaults",
-#                     "--formats",
-#                     "csv,excel,pdf",
-#                     "--json",
-#                     "--domain-stats",
-#                     "--record-type-stats",
-#                     "--error-breakdown",
-#                     "--output",
-#                     str(outdir),
-#                     "--quiet",  # less noisy output
-#                 ],
-#             )
-#             assert result.exit_code == 0, f"CLI failed: {result.output}"
-
-#     # Verify outputs
-#     files = list(outdir.glob("dns_benchmark_*.json"))
-#     assert files, "JSON export missing"
-#     json_path = files[0]
-
-#     csv_raw = list(outdir.glob("dns_benchmark_*_raw.csv"))
-#     csv_summary = list(outdir.glob("dns_benchmark_*_summary.csv"))
-#     csv_domains = list(outdir.glob("dns_benchmark_*_domains.csv"))
-#     csv_record_types = list(outdir.glob("dns_benchmark_*_record_types.csv"))
-#     csv_errors = list(outdir.glob("dns_benchmark_*_errors.csv"))
-
-#     assert csv_raw, "Raw CSV missing"
-#     assert csv_summary, "Summary CSV missing"
-#     assert csv_domains, "Domain stats CSV missing"
-#     assert csv_record_types, "Record type stats CSV missing"
-#     assert csv_errors, "Error stats CSV missing"
-
-#     excel = list(outdir.glob("dns_benchmark_*.xlsx"))
-#     pdf = list(outdir.glob("dns_benchmark_*.pdf"))
-#     assert excel, "Excel report missing"
-#     assert pdf, "PDF report missing"
-
-#     # Validate JSON structure
-#     data = json.loads(Path(json_path).read_text())
-#     assert "overall" in data
-#     assert "resolver_stats" in data and isinstance(data["resolver_stats"], list)
-#     assert "raw_results" in data and isinstance(data["raw_results"], list)
-#     assert "domain_stats" in data and isinstance(data["domain_stats"], list)
-#     assert "record_type_stats" in data and isinstance(data["record_type_stats"], list)
-#     assert "error_stats" in data and isinstance(data["error_stats"], dict)
 
 
 def test_benchmark_exports_csv_excel_pdf_json(tmp_path, sample_results):
@@ -292,110 +349,6 @@ def test_cli_domain_generic_error(monkeypatch):
         cli, ["benchmark", "--resolvers", "resolvers.json", "--domains", "bad.txt"]
     )
     assert "Error loading domains" in result.output
-
-
-def test_load_and_save_state(temp_config_dir):
-    manager = FeedbackManager()
-    state = manager._get_default_state()
-    manager._save_state(state)
-
-    loaded = manager._load_state()
-    assert loaded == state
-
-
-def test_should_show_prompt_threshold(temp_config_dir, monkeypatch):
-    manager = FeedbackManager()
-    state = manager._get_default_state()
-    state["total_runs"] = 5
-    state["last_shown"] = 0
-    manager._save_state(state)
-
-    # Force time to be > 24h later
-    monkeypatch.setattr("time.time", lambda: 60 * 60 * 25)
-    assert manager.should_show_prompt() is True
-
-
-def test_mark_feedback_given(temp_config_dir):
-    manager = FeedbackManager()
-    manager.mark_feedback_given()
-    state = manager._load_state()
-    assert state["feedback_given"] is True
-
-
-def test_mark_dismissed(temp_config_dir):
-    manager = FeedbackManager()
-    manager.mark_dismissed()
-    state = manager._load_state()
-    assert state["dismissed_count"] == 1
-
-
-def test_show_feedback_prompt_yes(monkeypatch, temp_config_dir):
-    manager = FeedbackManager()
-    state = manager._get_default_state()
-    state["total_runs"] = 5
-    state["last_shown"] = 0
-    manager._save_state(state)
-
-    monkeypatch.setattr("time.time", lambda: 60 * 60 * 25)
-    monkeypatch.setattr(click, "prompt", lambda *a, **k: "y")
-
-    # Should not mark dismissed
-    show_feedback_prompt()
-    state = manager._load_state()
-    assert state["dismissed_count"] == 0
-
-
-def test_show_feedback_prompt_no(monkeypatch, temp_config_dir):
-    manager = FeedbackManager()
-    state = manager._get_default_state()
-    state["total_runs"] = 5
-    state["last_shown"] = 0
-    manager._save_state(state)
-
-    monkeypatch.setattr("time.time", lambda: 60 * 60 * 25)
-    monkeypatch.setattr(click, "prompt", lambda *a, **k: "n")
-
-    show_feedback_prompt()
-    state = manager._load_state()
-    assert state["dismissed_count"] == 1
-
-
-def test_feedback_command(monkeypatch, temp_config_dir):
-    runner = CliRunner()
-    monkeypatch.setattr("webbrowser.open", lambda url: True)
-
-    result = runner.invoke(feedback)
-    assert result.exit_code == 0
-
-    manager = FeedbackManager()
-    state = manager._load_state()
-    assert state["feedback_given"] is True
-
-
-def test_reset_method_removes_file(temp_config_dir):
-    manager = FeedbackManager()
-    # Create a fake state file
-    manager._save_state(manager._get_default_state())
-    assert manager.config_file.exists()
-
-    # Reset should remove it
-    manager.reset()
-    assert not manager.config_file.exists()
-
-
-def test_reset_feedback_command(temp_config_dir):
-    runner = CliRunner()
-    manager = FeedbackManager()
-    manager._save_state(manager._get_default_state())
-    assert manager.config_file.exists()
-
-    # Run CLI command
-    result = runner.invoke(reset_feedback)
-    assert result.exit_code == 0
-    assert "✓ Feedback state reset" in result.output
-
-    # File should be gone
-    assert not manager.config_file.exists()
 
 
 def strip_ansi(text: str) -> str:
