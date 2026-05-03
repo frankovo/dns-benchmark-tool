@@ -11,26 +11,32 @@ pip install dns-benchmark-tool
 dns-benchmark benchmark --use-defaults --formats csv,excel
 ```
 
+> 🎉 **1,400+ downloads · 600+ active users**
+> 🚀 **The web dashboard is now live!** [Try BuildTools free →](https://buildtools.net)
+
 ---
-> 🎉 **1,400+ downloads this week!** Thank you to our growing community.  
-> 📢 **Want multi-region testing?** [Join the waitlist →](https://buildtools.net)
 
 **Real Time Tracking**
 
 [![Real Time Tracking](docs/real_time_tracking.gif)](https://github.com/frankovo/dns-benchmark-tool)
 *Watch DNS queries in motion*
 
+**Real Time Tracking - Web UI**
+<video src="https://github.com/frankovo/dns-benchmark-tool/raw/main/docs/BuildTools_DNS_Test_Demo.mp4" autoplay loop muted playsinline>
+  <img src="docs/BuildTools_DNS_Test_Demo_fallback.png" alt="Real Time Tracking - Web UI">
+</video>
+*Monitor DNS queries live with email alerts*
+
 </div>
 
-## 🎉 Today’s Release Highlights ![new](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen&label=new)
+## 🎉 What's New in ![new](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen&label=new)
 
-We’ve added **three powerful CLI commands** to make DNS benchmarking even more versatile:
+We've added **three powerful CLI commands** and full support for **DoH, DoT, and DNSSEC**:
 
-- 🚀 **top** — quick ranking of resolvers by speed and reliability  
-
-- 📊 **compare** — side‑by‑side benchmarking with detailed statistics and export options  
-
-- 🔄 **monitoring** — continuous performance tracking with alerts and logging  
+- 🚀 **top** — quick ranking of resolvers by speed and reliability
+- 📊 **compare** — side-by-side benchmarking with detailed statistics and export options
+- 🔄 **monitoring** — continuous performance tracking with alerts and logging
+- 🔒 **DoH / DoT / DNSSEC** — encrypted DNS benchmarking with real latency tradeoff data
 
 ```bash
 # Quick resolver ranking
@@ -42,6 +48,21 @@ dns-benchmark compare Cloudflare Google Quad9 --show-details
 # Run monitoring for 1 hour with alerts
 dns-benchmark monitoring --use-defaults --formats csv,excel --interval 30 --duration 3600 \
   --alert-latency 150 --alert-failure-rate 5 --output monitor.log
+
+# Encrypted DNS
+dns-benchmark benchmark \
+  --resolvers "Cloudflare,Google" \
+  --domains "bing.com,google.com" \
+  --doh \
+  --doh-url "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query" \
+  --iterations 1 \
+  --formats csv \
+  --output ./doh_results_explicit_urls
+
+dns-benchmark benchmark \
+  --resolvers "Cloudflare,Quad9" \
+  --domains "cloudflare.com,quad9.net" \
+  --dot
 ```
 
 ## 📈 Community Highlights
@@ -74,7 +95,7 @@ dns-benchmark monitoring --use-defaults --formats csv,excel --interval 30 --dura
 
 - [DNS Benchmark Tool](#dns-benchmark-tool)
   - [Part of BuildTools - Network Performance Suite](#part-of-buildtools---network-performance-suite)
-  - [🎉 Today’s Release Highlights ](#-todays-release-highlights-)
+  - [🎉 What's New in ](#-whats-new-in-)
   - [📈 Community Highlights](#-community-highlights)
   - [Table of Contents](#table-of-contents)
   - [🎯 Why This Tool?](#-why-this-tool)
@@ -85,12 +106,14 @@ dns-benchmark monitoring --use-defaults --formats csv,excel --interval 30 --dura
     - [Installation](#installation)
     - [Run Your First Benchmark](#run-your-first-benchmark)
     - [View Results](#view-results)
+  - [⚡ Commands at a Glance](#-commands-at-a-glance)
   - [✨ Key Features](#-key-features)
     - [🚀 Performance](#-performance)
     - [🔒 Security \& Privacy](#-security--privacy)
     - [📊 Analysis \& Export](#-analysis--export)
     - [🏢 Enterprise Features](#-enterprise-features)
     - [🌐 Cross-Platform](#-cross-platform)
+  - [🔒 Security \& Encrypted DNS](#-security--encrypted-dns)
   - [🔧 Advanced Capabilities](#-advanced-capabilities)
   - [💼 Use Cases](#-use-cases)
     - [🔧 For Developers: Optimize API Performance](#-for-developers-optimize-api-performance)
@@ -117,7 +140,6 @@ dns-benchmark monitoring --use-defaults --formats csv,excel --interval 30 --dura
       - [Mixed input](#mixed-input)
       - [Single](#single)
   - [🔧 Utilities](#-utilities)
-    - [Feedback](#feedback)
     - [Risolver management](#risolver-management)
     - [Domain management](#domain-management)
     - [Category overview](#category-overview)
@@ -138,11 +160,6 @@ dns-benchmark monitoring --use-defaults --formats csv,excel --interval 30 --dura
     - [🌟 Command Showcase](#-command-showcase)
   - [📊 Analysis Enhancements](#-analysis-enhancements)
   - [⚡ Best Practices](#-best-practices)
-  - [Feedback \& Community Input](#feedback--community-input)
-    - [Feedback Command](#feedback-command)
-    - [Smart Feedback Prompts](#smart-feedback-prompts)
-    - [Privacy \& Data Storage](#privacy--data-storage)
-    - [Opting Out](#opting-out)
   - [⚙️ Configuration Files](#️-configuration-files)
     - [Resolvers JSON format](#resolvers-json-format)
     - [Domains text file format](#domains-text-file-format)
@@ -175,18 +192,15 @@ dns-benchmark monitoring --use-defaults --formats csv,excel --interval 30 --dura
     - [6. Real Time Monitoring](#6-real-time-monitoring)
   - [Getting help](#getting-help)
   - [Release workflow](#release-workflow)
-  - [🌐 Hosted Version (Coming Soon)](#-hosted-version-coming-soon)
-    - [🌍 Multi-Region Testing](#-multi-region-testing)
-    - [📊 Historical Tracking](#-historical-tracking)
-    - [🚨 Smart Alerts](#-smart-alerts)
-    - [👥 Team Collaboration](#-team-collaboration)
-    - [📈 SLA Compliance](#-sla-compliance)
-    - [🔌 API Access](#-api-access)
+  - [🌐 BuildTools Web Dashboard — Now Live](#-buildtools-web-dashboard--now-live)
+    - [What's live now (Free + Pro)](#whats-live-now-free--pro)
+    - [Coming Q2 2026](#coming-q2-2026)
+    - [Coming Q3 2026](#coming-q3-2026)
   - [🛣️ Roadmap](#️-roadmap)
     - [✅ Current Release (CLI Edition)](#-current-release-cli-edition)
-    - [🚧 Hosted Version (Q1 2026)](#-hosted-version-q1-2026)
-    - [🔜 More Network Tools (Q1-Q2 2026)](#-more-network-tools-q1-q2-2026)
-    - [💡 Your Input Matters](#-your-input-matters)
+    - [✅ Web Dashboard (Live)](#-web-dashboard-live)
+    - [🔜 Coming Q2 2026](#-coming-q2-2026)
+      - [Q3 2026](#q3-2026)
   - [🤝 Contributing](#-contributing)
     - [Ways to Contribute](#ways-to-contribute)
     - [🛠 Development \& Makefile Commands](#-development--makefile-commands)
@@ -257,6 +271,30 @@ Results are automatically saved to `./benchmark_results/` with:
 
 ---
 
+## ⚡ Commands at a Glance
+
+| Command | What it does | Quick example |
+|---|---|---|
+| `benchmark` | Full DNS benchmark with exports | `dns-benchmark benchmark --use-defaults` |
+| `top` | Rank all resolvers by speed | `dns-benchmark top --limit 5` |
+| `compare` | Side-by-side resolver comparison | `dns-benchmark compare Cloudflare Google Quad9` |
+| `monitoring` | Continuous monitoring with alerts | `dns-benchmark monitoring --use-defaults` |
+
+```bash
+# Find your fastest resolver right now
+dns-benchmark top --limit 5
+
+# Compare the big three
+dns-benchmark compare Cloudflare Google Quad9 --show-details
+
+# Monitor with DoT and alerts for 1 hour
+dns-benchmark monitoring --use-defaults --dot \
+  --interval 30 --duration 3600 \
+  --alert-latency 150 --output monitor.log
+```
+
+---
+
 ## ✨ Key Features
 
 ### 🚀 Performance
@@ -296,16 +334,104 @@ Results are automatically saved to `./benchmark_results/` with:
 
 ---
 
+## 🔒 Security & Encrypted DNS
+
+Three protocols are fully supported — each adds privacy at a latency cost.
+
+| Protocol | Flag | Typical overhead | When to use |
+|---|---|---|---|
+| Plain UDP | *(default)* | baseline | Latency benchmarking |
+| DNS-over-HTTPS | `--doh` | +50–200ms | Privacy, firewall bypass |
+| DNS-over-TLS | `--dot` | +200–500ms cold, ~50ms warm | Encrypted transport |
+| DNSSEC | `--dnssec-validate` | +30–100ms | Validating resolver integrity |
+
+> ⚠️ **Tradeoffs**
+> - DoH and DoT add TLS handshake overhead on first query per resolver. Use `--warmup-fast` to absorb this before measuring.
+> - `--dnssec-validate` requests RRSIG records and enforces the AD flag. Only ~33% of common domains are DNSSEC-signed — expect `DNSSEC_FAILED` results on unsigned domains. Latency numbers with and without this flag are **not directly comparable**.
+> - Results on mobile/hotspot will show 2–5× higher variance than wired ethernet. Use `--iterations 5` and compare median latency, not average.
+
+```bash
+# DoH benchmark
+dns-benchmark benchmark \
+  --resolvers "Cloudflare,Google" \
+  --domains "cloudflare.com,google.com" \
+  --doh --warmup-fast
+
+# custom resolvers — must supply urls 1:1, order matters, or it fails early
+dns-benchmark benchmark \
+  --resolvers "Cloudflare,Google" \
+  --domains "bing.com,google.com" \
+  --doh \
+  --doh-url "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query" \
+  --iterations 1 \
+  --formats csv \
+  --output ./doh_results_explicit_urls
+
+# DoT with DNSSEC on signed domains
+dns-benchmark benchmark \
+  --resolvers "Cloudflare,Quad9" \
+  --domains "cloudflare.com,quad9.net" \
+  --dot \
+  --dnssec-validate
+
+# DOH rank top resolvers
+dns-benchmark top --doh --limit 5
+
+# DOT rank top resolvers
+dns-benchmark top --dot --metric reliability --limit 5
+
+# Compare DoH resolvers
+dns-benchmark compare Cloudflare Google --doh --iterations 3
+
+# Monitor with DoT
+dns-benchmark monitoring --use-defaults --dot \
+  --interval 60 --alert-latency 300
+
+# DoH + DNSSEC enforced + export
+dns-benchmark benchmark --use-defaults --doh --dnssec-validate --formats csv,excel
+
+# DoT + DNSSEC enforced + multiple iterations
+dns-benchmark benchmark \
+  --resolvers "Cloudflare,Quad9,Google" \
+  --domains "cloudflare.com,quad9.net,google.com" \
+  --dot \
+  --dnssec-validate \
+  --iterations 5 \
+  --formats excel
+
+# DoH + custom urls + monitoring
+dns-benchmark monitoring \
+  --resolvers "Cloudflare,Google" \
+  --doh \
+  --doh-url "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query" \
+  --interval 30 --duration 7200
+```
+
+**Early failure examples** — these fail immediately before any query runs:
+
+```bash
+# --doh and --dot are mutually exclusive
+dns-benchmark benchmark --use-defaults --doh --dot
+# ERROR: --doh and --dot are mutually exclusive.
+
+# --doh-url count must match --resolvers count
+dns-benchmark benchmark --resolvers "Cloudflare,Google" --doh \
+  --doh-url "https://cloudflare-dns.com/dns-query"
+# ERROR: --doh-url has 1 URL(s) but --resolvers has 2 resolver(s). Counts must match.
+
+# Custom IP with --doh requires --doh-url
+dns-benchmark benchmark --resolvers "192.168.1.1" --doh
+# ERROR: --doh requires a DoH URL for: 192.168.1.1. Use --doh-url to supply them explicitly.
+```
+
+---
+
 ## 🔧 Advanced Capabilities
 
 ---
 > ⚠️ These flags are **documented for visibility** but not yet implemented.  
 > They represent upcoming advanced features.
 
-- `--doh` → DNS-over-HTTPS benchmarking *(coming soon)*
-- `--dot` → DNS-over-TLS benchmarking *(coming soon)*
-- `--doq` → DNS-over-QUIC benchmarking *(coming soon)*
-- `--dnssec-validate` → DNSSEC trust chain validation *(coming soon)*
 - `--zone-transfer` → AXFR/IXFR zone transfer testing *(coming soon)*
 - `--tsig` → TSIG-authenticated queries *(coming soon)*
 - `--idna` → Internationalized domain name support *(coming soon)*
@@ -466,7 +592,7 @@ dns-benchmark benchmark \
 dns-benchmark benchmark \
   --resolvers current-dns.json,new-dns.json \
   --use-defaults \
-  --dnssec-validate \ # coming soon
+  --dnssec-validate \
   --output migration-report/ \
   --formats csv,excel
 ```
@@ -478,7 +604,7 @@ dns-benchmark benchmark \
 ### 🏠 For Self-Hosters: Prove Pi-hole Performance
 
 ```bash
-# Compare Pi-hole against public resolvers (coming soon)
+# Compare Pi-hole against public resolvers
 dns-benchmark compare \
   --resolvers pihole.local,1.1.1.1,8.8.8.8,9.9.9.9 \
   --domains common-sites.txt \
@@ -510,7 +636,7 @@ dns-benchmark compare \
 ```bash
 # Benchmark privacy-focused DoH/DoT resolvers
 dns-benchmark benchmark \
-  --doh \ # coming soon
+  --doh \
   --resolvers privacy-resolvers.json \
   --domains sensitive-sites.txt \
   --dnssec-validate
@@ -873,13 +999,6 @@ dns-benchmark benchmark \
 
 ## 🔧 Utilities
 
-### Feedback
-
-```bash
-# Provide feedback
-dns-benchmark feedback
-```
-
 ### Risolver management
 
 ```bash
@@ -1194,128 +1313,6 @@ Cache hits: 40 (26.7%)
 | **Debug Mode**  | `--iterations 1 --timeout 10 --retries 0 --quiet`                                  | Long timeout, no retries, minimal output. Useful for diagnosing resolver issues. |
 | **Balanced Run**| `--iterations 2 --use-cache --warmup-fast --timeout 2 --retries 1`                 | A middle ground: moderate speed, some retries, cache enabled, quick warmup. |
 
-## Feedback & Community Input
-
-We value your input! Help us improve dns-benchmark by sharing your experience and DNS challenges.
-
-### Feedback Command
-
-Open the feedback form directly from CLI:
-
-```bash
-dns-benchmark feedback
-```
-
-This command:
-
-- Opens the feedback survey in your default browser
-- Takes ~2 minutes to complete
-- Directly shapes our roadmap and priorities
-- Automatically marks feedback as given (won't prompt again)
-
-**Survey link:** https://forms.gle/BJBiyBFvRJHskyR57
-
-### Smart Feedback Prompts
-
-To avoid being intrusive, dns-benchmark uses intelligent prompting:
-
-**When prompts appear:**
-
-- After your **5th, 15th, and 30th** benchmark run
-- With a **24-hour cooldown** between prompts
-- Only if you haven't already given feedback
-
-**Auto-dismiss conditions:**
-
-- You've already submitted feedback
-- You've dismissed the prompt 3 times
-- You've opted out via environment variable
-
-**Example prompt:**
-```
-──────────────────────────────────────────────────────────
-📢 Quick feedback request
-Help shape dns-benchmark! Share your biggest DNS challenge.
-→ https://forms.gle/BJBiyBFvRJHskyR57 (2 min survey)
-→ Or run: dns-benchmark feedback
-──────────────────────────────────────────────────────────
-
-Show this again? (y/n) [y]:
-```
-
-### Privacy & Data Storage
-
-**What we store locally:**
-dns-benchmark stores feedback prompt state in `~/.dns-benchmark/feedback.json`
-
-**Contents:**
-
-```json
-{
-  "total_runs": 15,
-  "feedback_given": false,
-  "dismissed_count": 0,
-  "last_shown": 1699876543,
-  "version": "1.0"
-}
-```
-
-**Privacy notes:**
-
-- ✅ All data stored **locally** on your machine
-- ✅ No telemetry or tracking
-- ✅ No automatic data transmission
-- ✅ File is only read/written during benchmark runs
-- ✅ Safe to delete at any time
-
-**What we collect (only when you submit feedback):**
-
-- Whatever you choose to share in the survey
-- We never collect usage data automatically
-
-### Opting Out
-
-**Method 1: Dismiss the prompt**
-When prompted, type `n` to dismiss:
-```
-Show this again? (y/n) [y]: n
-✓ Got it! We won't ask again. Thanks for using dns-benchmark!
-```
-
-After 3 dismissals, prompts stop permanently.
-
-**Method 2: Environment variable (complete disable)**
-
-```bash
-# Bash/Zsh
-export DNS_BENCHMARK_NO_FEEDBACK=1
-
-# Windows PowerShell
-$env:DNS_BENCHMARK_NO_FEEDBACK="1"
-
-# Permanently (add to ~/.bashrc or ~/.zshrc)
-echo 'export DNS_BENCHMARK_NO_FEEDBACK=1' >> ~/.bashrc
-```
-
-**Method 3: Delete state file**
-
-```bash
-rm ~/.dns-benchmark/feedback.json
-```
-
-**Method 4: CI/CD environments**
-Feedback prompts are automatically disabled when:
-
-- `CI=true` environment variable is set (standard in GitHub Actions, GitLab CI, etc.)
-- `--quiet` flag is used
-
-**Reset for testing (developers):**
-
-```bash
-dns-benchmark reset-feedback  # Hidden command
-```
-
----
 
 ## ⚙️ Configuration Files
 
@@ -1691,37 +1688,27 @@ dns-benchmark benchmark --use-defaults --formats excel,pdf \
 
 ---
 
-## 🌐 Hosted Version (Coming Soon)
+## 🌐 BuildTools Web Dashboard — Now Live
 
-**CLI stays free forever.** The hosted version adds features impossible to achieve locally:
+**CLI stays free forever.** The web dashboard is now available at [buildtools.net](https://buildtools.net)
 
-### 🌍 Multi-Region Testing
+### What's live now (Free + Pro)
 
-Test from US-East, US-West, EU, Asia simultaneously. See how your DNS performs for users worldwide.
+- 📊 **DNS Benchmark** — Visual results, history, powered by this CLI engine
+- 🔔 **DNS Monitoring** — Real-time alerts when your records change
+- 🆓 **Free tier** — Get started immediately, no credit card required
+- 💼 **Pro at €14/mo** — Extended retention and priority support
 
-### 📊 Historical Tracking
+### Coming Q2 2026
 
-Monitor DNS performance over time. Identify trends, degradation, and optimize continuously.
+- ⚡ **HTTP Benchmark** — Measure API response times and CDN performance
+- 🔒 **SSL Monitor** — Certificate expiry alerts before issues occur
 
-### 🚨 Smart Alerts
+### Coming Q3 2026
 
-Get notified via Email, Slack, PagerDuty when DNS performance degrades or SLA thresholds are breached.
+- 🌍 **Multi-region testing** — Test from multiple locations simultaneously
 
-### 👥 Team Collaboration
-
-Share results, dashboards, and reports across your team. Role-based access control.
-
-### 📈 SLA Compliance
-
-Automated monthly reports proving DNS provider meets SLA guarantees. Audit-ready documentation.
-
-### 🔌 API Access
-
-Integrate DNS monitoring into your existing observability stack. Prometheus, Datadog, Grafana.
-
----
-
-**[Join the Waitlist →](https://buildtools.net)** | Early access gets 50% off for 3 months
+[→ Sign up free at buildtools.net](https://buildtools.net)
 
 ---
 
@@ -1729,40 +1716,25 @@ Integrate DNS monitoring into your existing observability stack. Prometheus, Dat
 
 ### ✅ Current Release (CLI Edition)
 
-- Benchmark DNS resolvers across domains and record types
+- Benchmark, compare, monitor DNS resolvers
+- DoH, DoT, DNSSEC support (new in this release)
 - Export to CSV, Excel, PDF, JSON
-- Statistical analysis (P95, P99, jitter, consistency)
-- Automation support (CI/CD, cron)
 
-### 🚧 Hosted Version (Q1 2026)
+### ✅ Web Dashboard (Live)
 
-**CLI stays free forever.** Hosted adds:
+- DNS Benchmark with visual history
+- DNS Monitoring with real-time alerts
+- Free tier + Pro at €14/mo
+- [buildtools.net](https://buildtools.net)
 
-- 🌍 Multi-region testing (US, EU, Asia, custom)
-- 📊 Historical tracking with charts and trends
-- 🚨 Alerts (Email, Slack, PagerDuty, webhooks)
-- 👥 Team collaboration and sharing
-- 📈 SLA compliance reporting
-- 🔌 API access and integrations
+### 🔜 Coming Q2 2026
 
-**[Join Waitlist](https://buildtools.net)** for early access
+- HTTP Benchmark
+- SSL Monitor
+  
+#### Q3 2026
 
-### 🔜 More Network Tools (Q1-Q2 2026)
-
-Part of BuildTools - Network Performance Suite:
-
-- 🔍 **HTTP/HTTPS Benchmark** - Test API endpoints and CDNs
-- 🔒 **SSL Certificate Monitor** - Never miss renewals
-- 📡 **Uptime Monitor** - 24/7 availability tracking
-- 🌐 **API Health Dashboard** - Complete network observability
-
-### 💡 Your Input Matters
-
-**Help shape our roadmap:**
-
-- [📝 2-minute feedback survey](https://forms.gle/BJBiyBFvRJHskyR57)
-- [💬 GitHub Discussions](https://github.com/frankovo/dns-benchmark-tool/discussions)
-- [⭐ Star us](https://github.com/frankovo/dns-benchmark-tool) if this helps you!
+- Multi-region testing
 
 ---
 
@@ -1914,17 +1886,17 @@ Yes! Just add it to a custom resolvers JSON file:
 <summary><b>What's the difference between CLI and hosted version?</b></summary>
 
 **CLI (Free Forever):**
+
 - Run tests from YOUR location
 - Save results locally
-- Manual execution
-- Open source
+- Open source — same engine powering the dashboard
 
-**Hosted (Coming Soon):**
-- Test from MULTIPLE regions
-- Historical tracking
-- Automated scheduling
-- Alerts and integrations
+**Web Dashboard (Live at buildtools.net):**
 
+- Visual benchmark results and history
+- DNS monitoring with real-time alerts
+- Free tier available, Pro at €14/mo
+- Multi-region testing coming Q3 2026
 </details>
 
 <details>
@@ -1964,7 +1936,6 @@ Run multiple iterations (`--iterations 5`) for more consistent results.
 
 ### Community
 
-- **Feedback**: [2-minute survey](https://forms.gle/BJBiyBFvRJHskyR57)
 - **Discussions**: [GitHub Discussions](https://github.com/frankovo/dns-benchmark-tool/discussions)
 - **Issues**: [Bug Reports](https://github.com/frankovo/dns-benchmark-tool/issues)
 
@@ -1987,6 +1958,6 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 Part of [BuildTools](https://buildtools.net) - Network Performance Suite
 
-[⭐ Star on GitHub](https://github.com/frankovo/dns-benchmark-tool) • [📦 Install from PyPI](https://pypi.org/project/dns-benchmark-tool/) • [🌐 Join Waitlist](https://buildtools.net)
+[⭐ Star on GitHub](https://github.com/frankovo/dns-benchmark-tool) • [📦 Install from PyPI](https://pypi.org/project/dns-benchmark-tool/)
 
 </div>
