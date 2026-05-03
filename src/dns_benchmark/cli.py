@@ -102,9 +102,6 @@ def _resolve_protocol_and_doh_urls(
     return QueryProtocol.DOH, url_map
 
 
-# TODO: Change intro banner to let users know about SaaS version is now available.
-# TODO: Cleanup comments, removed feedback prompts and command
-# TODO: Add docs and pusblish to pypi
 @click.group()
 @click.version_option(__version__, prog_name="DNS Benchmark Tool")
 def cli() -> None:
