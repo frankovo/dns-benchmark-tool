@@ -35,12 +35,6 @@ dns-benchmark benchmark --use-defaults --formats csv,excel
   <span>Monitor DNS queries live with email alerts</span>
 </p>
 
-<p align="center">
-  <strong>Real Time Tracking — Web UI</strong> <br>
-  <img src="https://raw.githubusercontent.com/frankovo/dns-benchmark-tool/main/docs/BuildTools_DNS_Test_Demo.mp4" alt="Real Time Tracking - Web UI">
-  <br>
-  <span>Monitor DNS queries live with email alerts</span>
-</p>
 
 ## 🎉 What's New in ![new](https://img.shields.io/pypi/v/dns-benchmark-tool.svg?color=brightgreen&label=new)
 
